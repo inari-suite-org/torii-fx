@@ -55,7 +55,7 @@ function firstSharedIsTorii(code, skeleton) {
  * @param {string} manifestText
  */
 export function inspectManifest(manifestText) {
-  const { code: text, skeleton, longStrings } = lex(manifestText);
+  const { code: text, skeleton, longStrings, unterminated } = lex(manifestText);
   const scripts = ['shared_script', 'shared_scripts', 'server_script', 'server_scripts']
     .flatMap((directive) => directiveValues(text, directive, skeleton))
     .filter((entry) => !entry.startsWith('@'));
@@ -67,7 +67,7 @@ export function inspectManifest(manifestText) {
     // FXServer's core checks that the FIRST shared script is the torii include, so this does too
     installed: firstSharedIsTorii(text, skeleton),
     presentButNotFirst: !firstSharedIsTorii(text, skeleton) && INSTALL_PATTERN.test(text),
-    uncertain: readsUncertainly(skeleton, longStrings),
+    uncertain: readsUncertainly(skeleton, longStrings + unterminated),
     jsOrCsharp: js + csharp > 0,
     jsCount: js,
     csharpCount: csharp,

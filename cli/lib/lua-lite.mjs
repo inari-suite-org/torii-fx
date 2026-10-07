@@ -9,7 +9,7 @@ const blank = (s) => s.replace(/[^\n]/g, ' ');
 
 /**
  * @param {string} text
- * @returns {{ code: string, skeleton: string, longStrings: number }} `code` has the same length as `text`: comments
+ * @returns {{ code: string, skeleton: string, longStrings: number, unterminated: number }} `code` has the same length as `text`: comments
  * and long strings are replaced by spaces, quoted strings are kept. `skeleton` is `code` with the content of quoted
  * strings blanked too, so a directive can be located without being fooled by text inside a string.
  */
@@ -17,6 +17,7 @@ export function lex(text) {
   let out = '';
   let skeleton = '';
   let longStrings = 0;
+  let unterminated = 0;
   let i = 0;
   const n = text.length;
   const longOpen = (at) => /^\[(=*)\[/.exec(text.slice(at, at + 64));
@@ -45,12 +46,38 @@ export function lex(text) {
       continue;
     }
     if (c === "'" || c === '"') {
+      // A short string can continue over several lines: a backslash before a line break (LF, CR, CRLF or LFCR
+      // count as one), and \z which skips all the white space that follows, line breaks included.
       let j = i + 1;
-      while (j < n && text[j] !== c && text[j] !== '\n') j += text[j] === '\\' ? 2 : 1;
-      const stop = Math.min(j + 1, n);
+      let closed = false;
+      while (j < n) {
+        const d = text[j];
+        if (d === c) {
+          closed = true;
+          break;
+        }
+        if (d === '\n' || d === '\r') break; // an unescaped line break: not a valid string
+        if (d === '\\') {
+          const e = text[j + 1];
+          if (e === 'z') {
+            j += 2;
+            while (j < n && /\s/.test(text[j])) j += 1;
+          } else if (e === '\r') {
+            j += text[j + 2] === '\n' ? 3 : 2;
+          } else if (e === '\n') {
+            j += text[j + 2] === '\r' ? 3 : 2;
+          } else {
+            j += 2;
+          }
+          continue;
+        }
+        j += 1;
+      }
+      if (!closed) unterminated += 1;
+      const stop = closed ? j + 1 : j;
       const piece = text.slice(i, stop);
       out += piece;
-      skeleton += piece.length > 2 ? c + ' '.repeat(piece.length - 2) + piece.slice(-1) : piece;
+      skeleton += closed ? c + blank(piece.slice(1, -1)) + c : c + blank(piece.slice(1));
       i = stop;
       continue;
     }
@@ -69,7 +96,7 @@ export function lex(text) {
     skeleton += c;
     i += 1;
   }
-  return { code: out, skeleton, longStrings };
+  return { code: out, skeleton, longStrings, unterminated };
 }
 
 /** Lua constructs that make a manifest's script list depend on something other than literal text. */

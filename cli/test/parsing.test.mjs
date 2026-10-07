@@ -39,6 +39,30 @@ test('the lexer blanks comments and long strings but keeps quoted strings, even 
   assert.equal(code.split('\n').length, text.split('\n').length, 'line numbers are preserved');
 });
 
+test('strings that continue over several lines are read the way Lua reads them', () => {
+  // \z skips all following white space, line breaks included: the include below is INSIDE the string
+  const hidden = "description \"x\\z\n   shared_script '@torii/init.lua' \"\nserver_script 'a.lua'\n";
+  assert.equal(inspectManifest(hidden).installed, false, 'text inside a \\z string is not a directive');
+  assert.equal(inspectManifest(hidden).hasServerCode, true);
+  assert.equal(inspectManifest(hidden).uncertain, false);
+
+  // a backslash before CRLF, LFCR or LF continues the string as well
+  for (const eol of ['\r\n', '\n\r', '\n', '\r']) {
+    const text = `description "x\\${eol}shared_script '@torii/init.lua'"${eol}server_script 'a.lua'${eol}`;
+    assert.equal(inspectManifest(text).installed, false, JSON.stringify(eol));
+  }
+
+  // the real directive after such a string is still found
+  const real = "description 'a\\z\n   b'\nshared_script '@torii/init.lua'\nserver_script 'a.lua'\n";
+  assert.equal(inspectManifest(real).installed, true);
+
+  // an unterminated string is not valid Lua: report the manifest as unreadable
+  assert.equal(inspectManifest("description 'oops\nserver_script 'a.lua'\n").uncertain, true);
+  assert.equal(lex("'a\\z\n  b'").longStrings, 0);
+  assert.equal(lex("'open").unterminated, 1);
+  assert.equal(lex("'a\\z\n  b' c").code.length, "'a\\z\n  b' c".length, 'offsets are preserved');
+});
+
 test('only the first shared script counts as the torii include', () => {
   const server = "server_script 'server.lua'\n";
   assert.equal(inspectManifest("fx_version 'cerulean'\nshared_script '@torii/init.lua'\n" + server).installed, true);
