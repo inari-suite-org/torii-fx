@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { declarationHash, parseDeclaration } from './lib/declaration.mjs';
 import { diffLocks, mergeAdditions, readLock, writeLock } from './lib/lock.mjs';
 import { proposalFromEvents, readEvents, riskWarning } from './lib/logs.mjs';
+import { normalizeEntry } from './lib/entries.mjs';
 import { isSafeResourceName } from './lib/names.mjs';
 import { appliesTo, describeMatch, loadPresets, matchPresets } from './lib/presets.mjs';
 import { findResources, inspectManifest, installInto, isEscrowed, uninstallFrom } from './lib/manifest.mjs';
@@ -58,7 +59,7 @@ function resolveDir(positional, io) {
 
 function install(dir, flags, io, remove) {
   const resources = findResources(dir);
-  const counts = { done: 0, already: 0, skipped: 0 };
+  const counts = { done: 0, already: 0, skipped: 0, unsure: 0 };
   for (const resource of resources) {
     const label = path.relative(dir, resource.dir) || resource.name;
     if (remove) {
@@ -80,13 +81,20 @@ function install(dir, flags, io, remove) {
       if (isEscrowed(resource.dir)) io.out(`             note: asset-escrow resource (.fxap); editing its manifest is untested, check it still starts\n`);
     } else if (result === 'already') {
       counts.already += 1;
+    } else if (result === 'uncertain') {
+      counts.unsure += 1;
+      io.out(`  not touched ${label}\n             its manifest uses long strings or computed script lists: add the line by hand\n`);
+    } else if (result === 'not-first') {
+      counts.unsure += 1;
+      io.out(`  not touched ${label}\n             the include would not be the first shared script: place it by hand\n`);
     } else {
       counts.skipped += 1;
     }
   }
   io.out(
     `${resources.length} resources found: ${counts.done} ${remove ? 'restored' : 'changed'}, ` +
-      `${counts.already} already protected, ${counts.skipped} skipped (no server code)\n`,
+      `${counts.already} already protected, ${counts.skipped} skipped (no server code)` +
+      `${counts.unsure > 0 ? `, ${counts.unsure} need a manual look` : ''}\n`,
   );
   if (!remove && counts.done > 0 && !flags['dry-run']) {
     io.out('Restart the server. torii starts in observe mode: nothing is blocked until you `set torii_mode "enforce"`.\n');
@@ -96,18 +104,23 @@ function install(dir, flags, io, remove) {
 
 function status(dir, io) {
   const resources = findResources(dir);
-  const rows = { protected: [], unprotected: [], noCode: [], jsCs: [] };
+  const rows = { protected: [], unprotected: [], unsure: [], noCode: [], jsCs: [] };
   for (const resource of resources) {
     const info = inspectManifest(fs.readFileSync(resource.manifestPath, 'utf8'));
-    if (!info.hasServerCode) rows.noCode.push(resource.name);
+    // A manifest is real Lua: when it cannot be read with confidence the CLI says so instead of guessing.
+    if (info.uncertain) rows.unsure.push(resource.name);
+    else if (!info.hasServerCode) rows.noCode.push(resource.name);
     else (info.installed ? rows.protected : rows.unprotected).push(resource.name);
     if (info.hasServerCode && info.jsOrCsharp) rows.jsCs.push(resource.name);
   }
   io.out(
-    `protected: ${rows.protected.length}   unprotected: ${rows.unprotected.length}   ` +
+    `protected: ${rows.protected.length}   unprotected: ${rows.unprotected.length}   unsure: ${rows.unsure.length}   ` +
       `js/c# server code: ${rows.jsCs.length}   no server code: ${rows.noCode.length}\n`,
   );
   if (rows.unprotected.length > 0) io.out(`not protected (run \`torii install\`): ${rows.unprotected.join(', ')}\n`);
+  if (rows.unsure.length > 0) {
+    io.out(`manifest not readable with confidence (check by hand; the torii core reports the real state at start): ${rows.unsure.join(', ')}\n`);
+  }
   if (rows.jsCs.length > 0) io.out(`JavaScript/C# torii cannot inspect: ${rows.jsCs.join(', ')}\n`);
   return 0;
 }
@@ -133,13 +146,20 @@ function approve(dir, flags, io) {
   // 1. what manifests ask for
   for (const [name, decl] of Object.entries(declarations)) {
     if (decl.http.length === 0 && !decl.dynamic_code && !decl.follow_redirects) continue;
-    additions[name] = { http: [...decl.http], dynamic_code: decl.dynamic_code, follow_redirects: decl.follow_redirects };
+    // Each declared entry is read the way the runtime reads it: an entry the runtime would reject is reported and not
+    // proposed, the others are proposed in canonical form and classified by their canonical host and path.
+    const http = [];
     for (const entry of decl.http) {
-      const host = entry.replace(/^https?:\/\//, '').split(/[/:]/)[0].toLowerCase();
-      const hasPath = /\//.test(entry.replace(/^https?:\/\//, ''));
-      const warning = riskWarning(host, hasPath);
+      const parsed = normalizeEntry(entry);
+      if (!parsed.ok) {
+        warn(name, `declared entry ${JSON.stringify(entry.slice(0, 80))} would be ignored by torii (${parsed.reason}); not proposed`);
+        continue;
+      }
+      http.push(parsed.entry);
+      const warning = riskWarning(parsed.host, parsed.hasPath);
       if (warning) warn(name, `declared in the manifest: ${warning}`);
     }
+    additions[name] = { http, dynamic_code: decl.dynamic_code, follow_redirects: decl.follow_redirects };
   }
 
   // 2. what the resource did in observe mode
