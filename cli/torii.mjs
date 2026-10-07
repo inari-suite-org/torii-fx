@@ -6,7 +6,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { declarationHash, parseDeclaration } from './lib/declaration.mjs';
 import { diffLocks, mergeAdditions, readLock, writeLock } from './lib/lock.mjs';
-import { isSafeResourceName, proposalFromEvents, readEvents, riskWarning } from './lib/logs.mjs';
+import { proposalFromEvents, readEvents, riskWarning } from './lib/logs.mjs';
+import { isSafeResourceName } from './lib/names.mjs';
 import { findResources, inspectManifest, installInto, isEscrowed, uninstallFrom } from './lib/manifest.mjs';
 
 const HELP = `torii - runtime permission firewall for FiveM Lua resources

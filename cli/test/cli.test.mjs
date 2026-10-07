@@ -284,7 +284,7 @@ test('hostile resource names cannot pollute prototypes and untrusted text cannot
   const root = tempDir();
   try {
     const log = path.join(root, 'torii.jsonl');
-    const lines = ['__proto__', 'constructor', 'toString', 'fine'].map((resource) => ({
+    const lines = ['__proto__', 'constructor', 'toString', 'valueOf', '__defineGetter__', 'fine'].map((resource) => ({
       resource,
       type: 'http',
       decision: 'would_deny',

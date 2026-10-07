@@ -2,6 +2,7 @@
 // proposal is only ever printed as a diff for the admin to review (see `torii approve`).
 
 import fs from 'node:fs';
+import { isSafeResourceName } from './names.mjs';
 
 /** Reasons that mean "torii refuses this whatever the lockfile says": never propose them. */
 const NEVER_PROPOSE = /^(invalid_url:|loopback_address|private_address|link_local_address|local_name|single_label_host|unspecified_address|shared_address_space|reserved_address|multicast_or_reserved_address)/;
@@ -39,13 +40,6 @@ export function riskWarning(host, hasPath) {
     return `${host} accepts data from anyone with an account: restrict it with a path prefix (e.g. /api/webhooks/<id>)`;
   }
   return null;
-}
-
-const RESERVED_NAMES = new Set(['__proto__', 'constructor', 'prototype', 'hasOwnProperty', 'toString', 'valueOf']);
-
-/** Resource names become object keys: plain identifiers only, never names that collide with Object.prototype. */
-export function isSafeResourceName(name) {
-  return typeof name === 'string' && /^[\w.\-[\]]{1,100}$/.test(name) && !RESERVED_NAMES.has(name);
 }
 
 /** Parses a JSON-lines file, ignoring blank and corrupt lines. */

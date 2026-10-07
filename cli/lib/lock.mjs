@@ -2,6 +2,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { isSafeResourceName } from './names.mjs';
 
 export const LOCK_VERSION = 1;
 
@@ -21,7 +22,7 @@ export function readLock(file) {
   const lock = emptyLock();
   lock.exempt = Array.isArray(raw.exempt) ? raw.exempt.filter((x) => typeof x === 'string') : [];
   for (const [name, item] of Object.entries(raw.resources ?? {})) {
-    if (['__proto__', 'constructor', 'prototype'].includes(name)) continue;
+    if (!isSafeResourceName(name)) continue;
     lock.resources[name] = {
       http: Array.isArray(item.http) ? item.http.filter((x) => typeof x === 'string') : [],
       dynamic_code: item.dynamic_code === true,
@@ -63,7 +64,7 @@ export function writeLock(file, lock) {
 export function mergeAdditions(lock, additions) {
   const next = structuredClone(lock);
   for (const [name, add] of Object.entries(additions)) {
-    if (['__proto__', 'constructor', 'prototype'].includes(name)) continue;
+    if (!isSafeResourceName(name)) continue;
     const current = next.resources[name] ?? { http: [], dynamic_code: false, follow_redirects: false };
     current.http = [...new Set([...current.http, ...(add.http ?? [])])];
     current.dynamic_code = current.dynamic_code || add.dynamic_code === true;
