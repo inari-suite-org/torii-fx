@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { declarationHash, parseDeclaration } from './lib/declaration.mjs';
 import { diffLocks, mergeAdditions, readLock, writeLock } from './lib/lock.mjs';
-import { hostRisk, proposalFromEvents, readEvents } from './lib/logs.mjs';
+import { proposalFromEvents, readEvents, riskWarning } from './lib/logs.mjs';
 import { findResources, inspectManifest, installInto, isEscrowed, uninstallFrom } from './lib/manifest.mjs';
 
 const HELP = `torii - runtime permission firewall for FiveM Lua resources
@@ -130,10 +130,9 @@ function approve(dir, flags, io) {
     additions[name] = { http: [...decl.http], dynamic_code: decl.dynamic_code, follow_redirects: decl.follow_redirects };
     for (const entry of decl.http) {
       const host = entry.replace(/^https?:\/\//, '').split(/[/:]/)[0].toLowerCase();
-      const risk = hostRisk(host);
-      if (risk && !/\//.test(entry.replace(/^https?:\/\//, ''))) {
-        warn(name, `${host} (${risk === 'shared_api' ? 'shared API' : 'user-content host'}) is declared without a path prefix`);
-      }
+      const hasPath = /\//.test(entry.replace(/^https?:\/\//, ''));
+      const warning = riskWarning(host, hasPath);
+      if (warning) warn(name, `declared in the manifest: ${warning}`);
     }
   }
 
@@ -155,6 +154,7 @@ function approve(dir, flags, io) {
       };
     }
     for (const [name, list] of Object.entries(proposal.warnings)) for (const text of list) warn(name, text);
+    notes.push('log events are self-reported by each resource (a hostile one can forge its own); treat this proposal as a suggestion and review every line');
   }
 
   // 3. hash of what each manifest declares today (resources unknown to the scan hash as "declares nothing")

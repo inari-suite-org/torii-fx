@@ -99,7 +99,8 @@ local function sanitize(event, resource)
 	for _, key in ipairs(FIELDS) do
 		local value = event[key]
 		if type(value) == 'string' then
-			clean[key] = value:sub(1, 200)
+			-- reports come from resources we do not trust: no control characters in anything we log or print
+			clean[key] = (value:sub(1, 200):gsub('[%c\127]', '?'))
 		end
 	end
 	return clean

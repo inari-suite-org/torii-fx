@@ -240,7 +240,7 @@ test('terminal escape sequences in logs, names and targets never reach the termi
     const result = run(['approve', root, '--from-logs', log, '--lock', path.join(root, 'lock.json')]);
     assert.ok(!result.out.includes('\u001b'), 'no raw escape in output');
     assert.ok(!result.out.includes('evil'), 'resource names with control characters are dropped');
-    assert.ok(!result.out.includes('host'), 'targets outside the strict host grammar are dropped');
+    assert.ok(!/host\?/.test(result.out), 'targets outside the strict host grammar are dropped');
     assert.equal(targetToEntry(`https://a.example/${esc}`), null);
     assert.equal(targetToEntry('https://[::1]:8080/x').entry, '[::1]:8080/x');
   } finally {
@@ -266,3 +266,16 @@ test(
     }
   },
 );
+
+test('manifest declarations get the same risk warnings as logged targets', () => {
+  const root = tempDir();
+  try {
+    writeResource(root, 'risky', "fx_version 'cerulean'\nserver_script 'a.lua'\ntorii_http 'pastebin.com/raw'\ntorii_http 'discord.com'\ntorii_http 'discord.com/api/webhooks/1'\n");
+    const out = run(['approve', root, '--lock', path.join(root, 'lock.json')]).out;
+    assert.match(out, /pastebin\.com serves or receives user content/);
+    assert.match(out, /discord\.com accepts data from anyone/);
+    assert.equal(out.match(/discord\.com accepts data/g).length, 1, 'the scoped webhook entry does not warn');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

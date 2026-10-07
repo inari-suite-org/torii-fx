@@ -25,6 +25,22 @@ export function hostRisk(host) {
   return null;
 }
 
+/**
+ * One rule for logs and manifests: user-content hosts are always a poor entry (a path prefix does not help),
+ * shared APIs only when nothing narrows them to one account.
+ * @returns {string|null}
+ */
+export function riskWarning(host, hasPath) {
+  const risk = hostRisk(host);
+  if (risk === 'user_content') {
+    return `${host} serves or receives user content: anybody can host a payload there, a path prefix does not make it safe; drop it if you can`;
+  }
+  if (risk === 'shared_api' && !hasPath) {
+    return `${host} accepts data from anyone with an account: restrict it with a path prefix (e.g. /api/webhooks/<id>)`;
+  }
+  return null;
+}
+
 /** Parses a JSON-lines file, ignoring blank and corrupt lines. */
 export function readEvents(file) {
   const events = [];
@@ -55,14 +71,8 @@ export function targetToEntry(target) {
     pathText = `${pathText.split('/').slice(0, redacted).join('/') || '/'}`;
     warnings.push(`a token-like path segment was removed from ${host}; check the prefix is specific enough`);
   }
-  const risk = hostRisk(host.toLowerCase());
-  if (risk === 'user_content' || (risk === 'shared_api' && pathText === '/')) {
-    warnings.push(
-      risk === 'shared_api'
-        ? `${host} accepts data from anyone with an account: restrict it with a path prefix (e.g. /api/webhooks/<id>)`
-        : `${host} serves or receives user content: anybody can host a payload there, a path prefix does not make it safe; drop it if you can`,
-    );
-  }
+  const warning = riskWarning(host.toLowerCase(), pathText !== '/');
+  if (warning) warnings.push(warning);
   const prefix = scheme === 'http' ? 'http://' : '';
   return { entry: `${prefix}${host}${port}${pathText === '/' ? '' : pathText.replace(/\/$/, '')}`, warnings };
 }

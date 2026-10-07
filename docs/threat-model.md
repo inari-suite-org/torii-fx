@@ -60,6 +60,12 @@ approved or changed after approval, protected resources that never reported in (
 
 ## Known weak spots and open questions
 
+* **Reports are self-reported.** A protected resource reports about itself through an export; the core attributes
+  it with `GetInvokingResource()`, so a resource cannot blame another one, but a hostile resource can forge its own
+  events (for example fake "would block" lines for an attacker host). `torii approve --from-logs` therefore only
+  *suggests* grants; the diff must be read line by line. Control characters are stripped before anything is logged
+  or printed.
+
 * The torii line is a *request to be protected*; a missing or unreadable `@torii/init.lua` makes FXServer print
   `Failed to load script` and start the resource anyway (verified). The manifest gate and the attestation check
   are what turn that into an alert (or a refusal in enforce mode).
