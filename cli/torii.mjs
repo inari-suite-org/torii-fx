@@ -6,7 +6,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { declarationHash, parseDeclaration } from './lib/declaration.mjs';
 import { diffLocks, mergeAdditions, readLock, writeLock } from './lib/lock.mjs';
-import { proposalFromEvents, readEvents, riskWarning } from './lib/logs.mjs';
+import { proposalFromEvents, readEvents, riskWarning, targetToEntry } from './lib/logs.mjs';
+import { hostSignals } from './lib/hosts.mjs';
+import { explainReason, FIXES } from './lib/reasons.mjs';
+import { simulate } from './lib/simulate.mjs';
 import { normalizeEntry } from './lib/entries.mjs';
 import { isSafeResourceName } from './lib/names.mjs';
 import { appliesTo, describeMatch, loadPresets, matchPresets } from './lib/presets.mjs';
@@ -20,11 +23,19 @@ Usage:
   torii status    <resources-dir>                 which resources are protected, which run JS/C# torii cannot inspect
   torii approve   <resources-dir> [options]       propose lockfile changes as a diff (nothing is written without --write)
 
+  torii simulate  <resources-dir> --from-logs <f> what enforce mode would block with the current lockfile
+  torii explain   <resources-dir> --from-logs <f> why each event was blocked, and what to do about it
+
 approve options:
   --from-logs <file>   build the proposal from observe-mode logs (torii/logs/torii.jsonl)
   --lock <file>        lockfile to read/write (default: <resources-dir>/torii/policy.lock.json)
   --use-presets        include the suggestions for well-known libraries (ox_lib, es_extended, ...) in the proposal
   --write              write the proposal to the lockfile (default: print the diff only)
+
+simulate / explain options:
+  --lock <file>        lockfile to test (default: <resources-dir>/torii/policy.lock.json)
+  --resource <name>    explain: only this resource
+  --fail-on-block      simulate: exit with code 2 if anything would still be blocked
 `;
 
 /** @param {string[]} argv */
@@ -35,7 +46,7 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg.startsWith('--')) {
       const key = arg.slice(2);
-      if (['from-logs', 'lock'].includes(key)) flags[key] = argv[(i += 1)];
+      if (['from-logs', 'lock', 'resource'].includes(key)) flags[key] = argv[(i += 1)];
       else flags[key] = true;
     } else {
       positional.push(arg);
@@ -199,7 +210,16 @@ function approve(dir, flags, io) {
     presetLines.push(`${item.resource}  (${item.entry.origin.replace('https://', '')})`, `    note       ${item.entry.note}`, '');
   }
 
-  // 4. hash of what each manifest declares today (resources unknown to the scan hash as "declares nothing")
+  // 4. heuristic signals about every host about to be proposed (they order the reading, they decide nothing)
+  for (const [name, add] of Object.entries(additions)) {
+    for (const entry of add.http) {
+      const parsed = normalizeEntry(entry);
+      if (!parsed.ok) continue;
+      for (const signal of hostSignals(parsed.host)) warn(name, `look closer: ${signal}`);
+    }
+  }
+
+  // 5. hash of what each manifest declares today (resources unknown to the scan hash as "declares nothing")
   for (const name of Object.keys(additions)) {
     additions[name].declaration_hash = declarationHash(declarations[name] ?? { http: [] });
   }
@@ -240,6 +260,88 @@ function approve(dir, flags, io) {
   return 0;
 }
 
+function loadEventsAndLock(dir, flags, io) {
+  if (!flags['from-logs']) {
+    io.err('Missing --from-logs <file> (the observe-mode log, torii/logs/torii.jsonl).\n');
+    return null;
+  }
+  if (!fs.existsSync(flags['from-logs'])) {
+    io.err(`Log file not found: ${flags['from-logs']}\n`);
+    return null;
+  }
+  const lockPath = flags.lock ?? path.join(dir, 'torii', 'policy.lock.json');
+  return { events: readEvents(flags['from-logs']), lock: readLock(lockPath), lockPath };
+}
+
+const show = (value) => JSON.stringify(String(value).slice(0, 160));
+
+function simulateCommand(dir, flags, io) {
+  const input = loadEventsAndLock(dir, flags, io);
+  if (!input) return 1;
+  const outcomes = simulate(input.events, input.lock);
+  const byResource = new Map();
+  for (const o of outcomes) {
+    const row = byResource.get(o.resource) ?? { blocked: 0, allowed: 0, unknown: 0 };
+    row[o.verdict] += o.count;
+    byResource.set(o.resource, row);
+  }
+  io.out(`Enforce mode with ${input.lockPath}, replayed against ${input.events.length} logged events\n\n`);
+  if (byResource.size === 0) {
+    io.out('Nothing in the log would be blocked or allowed differently.\n');
+    return 0;
+  }
+  io.out(`  ${'resource'.padEnd(28)} ${'blocked'.padStart(8)} ${'allowed'.padStart(8)} ${'cannot tell'.padStart(12)}\n`);
+  for (const [name, row] of byResource) {
+    io.out(`  ${name.slice(0, 28).padEnd(28)} ${String(row.blocked).padStart(8)} ${String(row.allowed).padStart(8)} ${String(row.unknown).padStart(12)}\n`);
+  }
+  const blocked = outcomes.filter((o) => o.verdict === 'blocked');
+  const unknown = outcomes.filter((o) => o.verdict === 'unknown');
+  if (blocked.length > 0) {
+    io.out('\nWould still be blocked:\n');
+    for (const o of blocked) io.out(`  ${o.resource}  ${o.type}  ${show(o.target)}  (${o.reason}, seen ${o.count}x)\n`);
+  }
+  if (unknown.length > 0) {
+    io.out('\nCannot tell (the log keeps only the start of the path, your entry is longer):\n');
+    for (const o of unknown) io.out(`  ${o.resource}  ${o.type}  ${show(o.target)}  (seen ${o.count}x)\n`);
+  }
+  io.out('\nRun `torii explain` on the same log for the reason behind each line and what to do about it.\n');
+  return flags['fail-on-block'] && blocked.length > 0 ? 2 : 0;
+}
+
+function explainCommand(dir, flags, io) {
+  const input = loadEventsAndLock(dir, flags, io);
+  if (!input) return 1;
+  const wanted = typeof flags.resource === 'string' ? flags.resource : null;
+  const outcomes = simulate(input.events, input.lock).filter((o) => !wanted || o.resource === wanted);
+  if (outcomes.length === 0) {
+    io.out(wanted ? `Nothing blocked for ${wanted} in this log.\n` : 'Nothing blocked in this log.\n');
+    return 0;
+  }
+  for (const o of outcomes) {
+    const { why, fix } = explainReason(o.reason);
+    const status = { blocked: 'blocked with the current lockfile', allowed: 'allowed by the current lockfile', unknown: 'cannot tell from the log (see `torii simulate`)' }[o.verdict];
+    io.out(`${o.resource}  ${o.type}  ${show(o.target)}  (seen ${o.count}x)\n`);
+    io.out(`  status   ${status}\n`);
+    io.out(`  why      ${why}\n`);
+    io.out(`  next     ${FIXES[fix] ?? FIXES.review}\n`);
+    if (fix === 'grant' && o.verdict !== 'allowed') {
+      if (o.type === 'http') {
+        const converted = targetToEntry(o.target);
+        if (converted) {
+          io.out(`  lockfile "${o.resource}": { "http": [${JSON.stringify(converted.entry)}] }\n`);
+          for (const text of converted.warnings) io.out(`  careful  ${text}\n`);
+          const signals = hostSignals(normalizeEntry(converted.entry).host ?? '');
+          for (const signal of signals) io.out(`  careful  ${signal}\n`);
+        }
+      } else if (o.type === 'dynamic_code') {
+        io.out(`  lockfile "${o.resource}": { "dynamic_code": true }\n`);
+      }
+    }
+    io.out('\n');
+  }
+  return 0;
+}
+
 /**
  * @param {string[]} argv
  * @param {{ out: (s: string) => void, err: (s: string) => void }} io
@@ -256,7 +358,7 @@ export function main(argv, rawIo = { out: (s) => process.stdout.write(s), err: (
     io.out(HELP);
     return command ? 0 : 1;
   }
-  if (!['install', 'uninstall', 'status', 'approve'].includes(command)) {
+  if (!['install', 'uninstall', 'status', 'approve', 'simulate', 'explain'].includes(command)) {
     io.err(`Unknown command: ${command}\n\n${HELP}`);
     return 1;
   }
@@ -266,6 +368,8 @@ export function main(argv, rawIo = { out: (s) => process.stdout.write(s), err: (
     if (command === 'install') return install(dir, flags, io, false);
     if (command === 'uninstall') return install(dir, flags, io, true);
     if (command === 'status') return status(dir, io);
+    if (command === 'simulate') return simulateCommand(dir, flags, io);
+    if (command === 'explain') return explainCommand(dir, flags, io);
     return approve(dir, flags, io);
   } catch (error) {
     io.err(`torii: ${error.message}\n`);
