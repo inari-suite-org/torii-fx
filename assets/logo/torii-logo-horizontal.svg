@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 300" width="1180" height="300" role="img" aria-label="torii">
+  <title>torii</title>
+  <g transform="translate(10 10) scale(0.2734)">
+  <circle cx="512" cy="512" r="400" fill="none" stroke="#131B19" stroke-width="28"/>
+  <rect x="198" y="270" width="628" height="32" fill="#C8442B"/>
+  <path d="M142 208 Q512 318 882 208 L862 250 Q512 360 164 250 Z" fill="#131B19"/>
+  <rect x="320" y="410" width="384" height="382" fill="#131B19"/>
+  <polygon points="282,300 332,300 332,792 264,792" fill="#C8442B"/>
+  <polygon points="692,300 742,300 760,792 692,792" fill="#C8442B"/>
+  <rect x="212" y="384" width="600" height="26" fill="#C8442B"/>
+  <rect x="488" y="310" width="48" height="76" fill="#C8442B"/>
+  <rect x="252" y="792" width="520" height="12" fill="#131B19"/>
+  <rect x="268" y="816" width="488" height="8" fill="#131B19"/>
+  <path d="M392 520 L418 440 L470 500 Q512 488 554 500 L606 440 L632 520 Q640 600 560 680 L512 720 L464 680 Q384 600 392 520 Z" fill="#212E2A"/>
+  <path d="M392 540 C420 548 456 562 480 588 C444 592 408 578 392 540 Z" fill="#C8442B"/>
+  <path d="M632 540 C604 548 568 562 544 588 C580 592 616 578 632 540 Z" fill="#C8442B"/>
+  </g>
+  <text x="330" y="182" font-family="Inter, 'Segoe UI', system-ui, Helvetica, Arial, sans-serif" font-size="150" font-weight="800" letter-spacing="-3" fill="#131B19">torii</text>
+  <text x="334" y="236" font-family="Inter, 'Segoe UI', system-ui, Helvetica, Arial, sans-serif" font-size="30" font-weight="500" letter-spacing="6" fill="#5B6662">PERMISSION FIREWALL FOR FIVEM LUA</text>
+</svg>

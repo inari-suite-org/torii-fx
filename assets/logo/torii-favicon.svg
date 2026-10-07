@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="torii">
+  <rect width="1024" height="1024" rx="200" fill="#131B19"/>
+  <path d="M120 232 Q512 372 904 232 L880 292 Q512 432 144 292 Z" fill="#F5F2E8"/>
+  <polygon points="262,330 352,330 352,830 240,830" fill="#C8442B"/>
+  <polygon points="672,330 762,330 784,830 672,830" fill="#C8442B"/>
+  <rect x="190" y="440" width="644" height="48" fill="#C8442B"/>
+  <path d="M404 600 C436 610 470 626 494 656 C456 662 416 646 404 600 Z" fill="#F5F2E8"/>
+  <path d="M620 600 C588 610 554 626 530 656 C568 662 608 646 620 600 Z" fill="#F5F2E8"/>
+</svg>

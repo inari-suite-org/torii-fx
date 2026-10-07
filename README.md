@@ -1,164 +1,254 @@
-# torii
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
+    <img alt="torii: least privilege for FiveM resources" src="assets/banner-light.svg" width="100%">
+  </picture>
+</p>
 
-**A runtime permission firewall for FiveM server-side Lua resources.**
-Every resource declares what it needs (which web hosts it talks to, whether it runs dynamic code). The server admin
-approves it once. Everything else is blocked, or logged first while you get comfortable.
+<p align="center">
+  <a href="https://github.com/OWNER/torii-fx/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/OWNER/torii-fx/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="license MIT" src="https://img.shields.io/badge/license-MIT-C8442B?style=flat-square">
+  <img alt="Lua 5.4" src="https://img.shields.io/badge/Lua-5.4-131B19?style=flat-square&logo=lua&logoColor=white">
+  <img alt="tested on FXServer 36897" src="https://img.shields.io/badge/FXServer-build%2036897-131B19?style=flat-square">
+  <img alt="status: v0.1 alpha" src="https://img.shields.io/badge/status-v0.1%20alpha-C8442B?style=flat-square">
+  <img alt="84 Lua specs, 14 CLI tests" src="https://img.shields.io/badge/tests-84%20Lua%20%2B%2014%20CLI-3E8E5E?style=flat-square">
+</p>
 
-```text
-[torii] BLOCKED  shop_v2  http PerformHttpRequestInternalEx -> https://cipher-panel.example/payload.lua  (resource_not_in_lockfile)  at shop_v2/server/main.lua:48
-```
+<p align="center">
+  <b>Don't try to recognise bad code. Control what code is allowed to do.</b><br>
+  torii gives every FiveM resource a short list of permissions, the way Android and Deno do.<br>
+  A backdoor, however well obfuscated, still has to <i>call home</i> and <i>run what it downloads</i>.
+</p>
 
-<!-- Demo GIF goes here: docs/demo.gif (record `ensure torii_demo_backdoor` in observe, then in enforce mode). -->
-<p align="center"><em>demo GIF: <code>docs/demo.gif</code> (to be recorded). Real console transcript: <a href="docs/demo.md">docs/demo.md</a></em></p>
+---
 
-## The problem
+## See it work
 
-FiveM servers install third-party resources: bought, free, or "leaked". Some carry a backdoor such as the
-Cipher family or the 2026 Blum panel loader: a few obfuscated lines that download code from a remote server and
-run it with `load` (or `eval` in JavaScript), steal `rcon_password`, or hand an attacker admin rights.
+<p align="center">
+  <img alt="Console replay: torii first reports, then blocks, a demo remote-code loader" src="assets/demo.svg" width="880">
+</p>
 
-Most existing tools are static scanners that look for known patterns. A backdoor with an obfuscation they have
-not seen yet walks past them.
+<sub>Abridged replay of a real FXServer console session (build 36897) running the harmless
+[demo resource](demo/torii_demo_backdoor). Full transcript: [docs/demo.md](docs/demo.md).</sub>
 
-torii turns the problem around, like Android permissions or Deno's `--allow-net`: it does not try to recognise
-bad code, it controls what code is *allowed to do*. However well it is obfuscated, a remote loader has to
-contact a host and execute what it receives, and those are the two things torii gates.
+## Why
+
+Third-party resources (bought, free, "leaked") run with the full power of your server. A few obfuscated lines are
+enough to download code from a stranger's server, run it with `load`, read your `rcon_password` and hand out admin.
+Most anti-backdoor tools are **static scanners**: they look for patterns they already know.
+
+| | Static scanner | **torii** |
+|---|---|---|
+| Brand-new obfuscation | missed until someone writes a signature | **still blocked**: it must contact a host and execute text |
+| What it needs from you | re-scan, re-update signatures | approve permissions once, review diffs on updates |
+| Legit resource that calls an API | false positive | declared, approved, works |
+| When it acts | when you remember to scan | **at run time**, inside the resource |
+| Output | "suspicious file" | resource, call, target, `file:line`, reason |
+
+torii does not replace review, backups or an egress firewall. It adds a layer that does not depend on recognising the malware.
 
 ## How it works
 
-```text
-              server.cfg                                       resources/shop_v2/fxmanifest.lua
-   ensure torii  (first)                                       shared_script '@torii/init.lua'   <- added by `torii install`
-        │                                                      torii_http 'api.shop.example/v1'  <- what the author asks for
-        ▼
- ┌──────────────┐   exports.torii:report()   ┌───────────────────────────────────────────────┐
- │ torii (core) │ ◄───────────────────────── │ Lua state of shop_v2: init.lua runs FIRST and │
- │ log, alerts, │                            │ wraps HTTP, load, InvokeNative, SaveResource- │
- │ manifest gate│                            │ File, debug.getupvalue... using policy.lock   │
- └──────────────┘                            └───────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph R["each protected resource (own Lua state)"]
+      I["init.lua runs FIRST<br/>(shared_script)"] --> W["wrapped: HTTP · load · InvokeNative<br/>SaveResourceFile · debug.getupvalue"]
+      W --> C["resource code"]
+    end
+    L[("policy.lock.json<br/>approved by the admin")] --> I
+    W -->|"report (self only)"| K["torii core<br/>log · alerts · manifest gate"]
+    K --> J[("torii.jsonl")]
+    J -->|"approve --from-logs"| D{{"diff you review"}}
+    D -->|"--write"| L
 ```
 
-* Each resource has its own Lua state, so interception happens **inside** each protected resource.
-  `shared_script '@torii/init.lua'` runs before any other script of that resource (verified, see
-  [docs/experiments-results.md](docs/experiments-results.md)).
-* The manifest only **asks**. The admin-owned lockfile `torii/policy.lock.json` **grants**, and stores a hash of
-  the declaration that was reviewed. If a resource update changes its declaration, torii reports it.
-* The core resource refuses (enforce) or flags (observe) resources that have server code but no torii line,
-  and resources that run JavaScript/C# server code torii cannot inspect.
+**Three ideas make it work:**
 
-## Install (3 steps)
+1. **Inside the sandbox, first.** Every resource has its own Lua state. `shared_script '@torii/init.lua'` is the first
+   thing that runs in it (checked on a real server), so the wrappers exist before any other code of that resource.
+2. **Declare ≠ grant.** A resource can *ask* for permissions in its manifest; only your lockfile *grants* them, and it
+   stores a hash of the declaration you reviewed. If an update changes the request, torii tells you.
+3. **Observe first.** The default mode only logs what *would* be blocked, so you can install it on a live server
+   without breaking anything, then turn enforcement on when the diff looks right.
 
-Requirements: Node.js 18+ for the CLI, and a recent FXServer artifact (developed and tested on build 36897; older
-builds are untested and may lack the cross-resource file-write protection torii relies on to protect its own files).
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> Installed: torii install
+    Installed --> Observing: restart (default mode)
+    Observing --> Reviewed: torii approve --from-logs
+    Reviewed --> Approved: --write
+    Approved --> Enforcing: set torii_mode "enforce"
+    Enforcing --> Reviewed: resource update changes its declaration
+```
 
-1. **Copy the `torii/` folder into `resources/`** and put `ensure torii` **first** in `server.cfg`.
-2. **Protect your resources**:
-   ```bash
-   node cli/torii.mjs install /path/to/resources      # adds one line per manifest, keeps *.torii.bak backups
-   ```
-   (`npx torii-fx install ...` once the package is published. `torii uninstall` restores everything.)
-3. **Restart in observe mode** (the default: nothing is blocked). Use the server normally for a while, then:
-   ```bash
-   node cli/torii.mjs approve /path/to/resources --from-logs resources/torii/logs/torii.jsonl
-   ```
-   Read the diff. If it looks right, add `--write`, restart, and turn enforcement on in `server.cfg`:
-   ```text
-   set torii_mode "enforce"
-   ```
+## Install in 3 steps
 
-Try it safely first: `ensure torii_demo_backdoor` ([demo/](demo/torii_demo_backdoor)) imitates a remote loader
-against a `.invalid` domain and shows what torii does in each mode.
+> **Requirements:** a recent FXServer artifact (developed and tested on build **36897**) and Node.js 18+ for the CLI.
+
+**1. Add the resource.** Copy `torii/` into `resources/` and make it the **first** `ensure` in `server.cfg`.
+
+**2. Protect your resources.** One line is added to each manifest (backups kept as `*.torii.bak`, fully reversible):
+
+```bash
+node cli/torii.mjs install /path/to/resources      # `npx torii-fx ...` once published
+node cli/torii.mjs status  /path/to/resources      # who is covered, who runs JS/C# (not covered)
+```
+
+**3. Observe, approve, enforce.**
+
+```bash
+# restart the server and play for a while: nothing is blocked, everything is logged
+node cli/torii.mjs approve /path/to/resources --from-logs resources/torii/logs/torii.jsonl
+# read the diff... then
+node cli/torii.mjs approve /path/to/resources --from-logs resources/torii/logs/torii.jsonl --write
+```
+```text
+set torii_mode "enforce"
+```
+
+Want to see it first? `ensure torii_demo_backdoor` runs a harmless imitation of a remote loader
+(a `.invalid` domain, no payload) so you can watch both modes.
 
 ## Permissions
 
-Declared by the resource author in `fxmanifest.lua` (a *request*, nothing more):
+<table>
+<tr><th>The resource asks (<code>fxmanifest.lua</code>)</th><th>The admin grants (<code>policy.lock.json</code>)</th></tr>
+<tr><td>
 
 ```lua
-torii_http 'api.weather.example'                        -- a host (https by default)
-torii_http 'discord.com/api/webhooks/1234567890'        -- a path prefix (matched on segment boundaries)
-torii_http 'http://legacy.example.com:8080'             -- plain http / explicit port must be written out
-torii_dynamic_code 'yes'                                -- may run load() on text (many libraries do)
-torii_follow_redirects 'yes'                            -- keep following HTTP redirects (off by default in enforce)
+torii_http 'api.weather.example'
+torii_http 'discord.com/api/webhooks/1234'
+torii_dynamic_code 'yes'
 ```
 
-Granted by the admin in `torii/policy.lock.json` (written by `torii approve --write`):
+</td><td>
 
 ```json
-{
-  "version": 1,
-  "exempt": ["my_trusted_js_resource"],
-  "resources": {
-    "weather": {
-      "http": ["api.weather.example/v1"],
-      "dynamic_code": false,
-      "follow_redirects": false,
-      "declaration_hash": "1529d180165a4ed687b671ddcf294eb70ddf5878b2ddda8e7edbe89e1951720d"
-    }
-  }
+"weather": {
+  "http": ["api.weather.example",
+           "discord.com/api/webhooks/1234"],
+  "dynamic_code": true,
+  "follow_redirects": false,
+  "declaration_hash": "1529d180…"
 }
 ```
 
-HTTP rules, all enforced by a strict URL parser (see [url_spec.lua](spec/url_spec.lua)):
+</td></tr>
+</table>
 
-* Host match is exact (no wildcards in v0.1). Lower-cased, trailing dot removed, default ports implied.
-* Refused whatever the lockfile says: `localhost`, private/link-local/loopback ranges (IPv4 in every spelling,
-  IPv6, IPv4 hidden in IPv6), `*.users.cfx.re` (FXServer rewrites it to localhost), single-label hosts, URLs with
-  user info, backslashes, odd percent-encoding or non-ASCII hosts. For local development: `set torii_allow_private 1`.
-* In enforce mode redirects are **not followed** unless granted (an allowed host that redirects would otherwise
-  be a way out). A denied request looks like a network failure (`PerformHttpRequest` calls back with status 0).
-* Hosts where anybody can publish content (`pastebin.com`, `*.github.io`, `*.workers.dev`...) or that receive data
-  from any account (`discord.com`, `api.telegram.org`...) trigger a warning; scope them with a path prefix.
-
-`load`: text chunks need `dynamic_code`; binary chunks (Lua bytecode) are **always** refused, in every mode.
-A denied `load` returns `nil, message`, like a syntax error.
-
-Other natives (`GetConvar` on secret-looking names, `ExecuteCommand`, `SetHttpHandler`, writes to code files) are
-logged. Rewriting any `fxmanifest.lua` / `__resource.lua` through `SaveResourceFile` is blocked in enforce mode.
-
-## Modes and logs
-
-| `set torii_mode` | Behaviour |
+| Key | Meaning |
 |---|---|
-| `observe` (default) | Nothing is blocked. Everything that *would* be blocked is logged as `WOULD BLOCK`. |
-| `enforce` | Denials are real. Resources without the torii line, or with JS/C# server code, are not started unless listed in `exempt`. |
+| `torii_http 'host'` | HTTPS to that host. Exact match, no wildcards. `host:port`, `http://host` must be written out. |
+| `torii_http 'host/path'` | Prefix match **on segment boundaries**: `/api/webhooks/123` covers `/api/webhooks/123/token`, not `/api/webhooks/1234`. |
+| `torii_dynamic_code 'yes'` | May run `load` on text (many libraries need it). Lua **bytecode is never allowed**. |
+| `torii_follow_redirects 'yes'` | Keep following HTTP redirects (off by default in enforce mode). |
 
-Console: one line per event (resource, API, target, reason, file:line). File: `torii/logs/torii.jsonl`, one JSON
-object per line:
+Always refused, whatever the lockfile says: `localhost`, private / link-local / loopback ranges (every IPv4 spelling,
+IPv6, IPv4 hidden in IPv6), `*.users.cfx.re`, single-label hosts, URLs with user-info, backslashes, odd percent-encoding
+or non-ASCII hosts. Development only: `set torii_allow_private 1`.
 
+## What it covers
+
+| Behaviour | observe | enforce |
+|---|:---:|:---:|
+| Download from / send to an unapproved host (`PerformHttpRequest`) | 👁 logged | ⛔ blocked (looks like a network failure, status 0) |
+| Same, through `Citizen.InvokeNative` with the native's hash | 👁 | ⛔ |
+| An approved host redirecting elsewhere | 👁 | ⛔ redirects not followed |
+| `localhost`, cloud metadata address, private ranges | 👁 | ⛔ |
+| `load` on text without a grant | 👁 | ⛔ returns `nil, message` |
+| `load` on Lua bytecode | ⛔ | ⛔ |
+| Recovering the real natives through `debug.getupvalue` | ⛔ | ⛔ |
+| Rewriting `fxmanifest.lua` to drop the protection | 👁 | ⛔ |
+| Resource with server code but no torii line | 👁 | ⛔ refused at start |
+| Reading secret-looking convars, `ExecuteCommand`, `SetHttpHandler` | 👁 names only | 👁 names only |
+| **JavaScript / C# server scripts** | 🚩 flagged | 🚩 refused unless exempt |
+
+Nothing sensitive reaches the logs: no bodies, headers, query strings, token-like path segments, convar values or
+command arguments.
+
+## What it logs
+
+```text
+[torii] BLOCKED  shop_v2  http PerformHttpRequestInternalEx -> https://cipher-panel.example/payload.lua  (not_in_allow_list)  at shop_v2/server/main.lua:48
+```
 ```json
-{"ts":"2026-10-07T07:53:39Z","resource":"shop_v2","type":"http","api":"PerformHttpRequestInternalEx","decision":"would_deny","mode":"observe","reason":"not_in_allow_list","target":"https://evil.example/payload.lua","src":"shop_v2/server.lua:14","level":"warn"}
+{"ts":"2026-10-07T07:53:39Z","resource":"shop_v2","type":"http","api":"PerformHttpRequestInternalEx","decision":"deny","mode":"enforce","reason":"not_in_allow_list","target":"https://cipher-panel.example/payload.lua","src":"shop_v2/server/main.lua:48","level":"warn"}
 ```
 
-torii never logs request bodies, headers, query strings, long path segments (tokens), convar values or command
-arguments. Only convar *names* and command *names*.
+## Honest limits
 
-## Limits (read this)
+> [!WARNING]
+> torii is a seatbelt, not a vault. Read the full [threat model](docs/threat-model.md) before relying on it.
 
-torii is a seatbelt, not a vault. The full analysis is in **[docs/threat-model.md](docs/threat-model.md)**. In short:
+- **Server-side Lua only.** JavaScript and C# server code is *flagged*, not inspected, and the most recent public
+  backdoor family is JavaScript. Pair torii with an OS-level egress firewall.
+- It does not see harm that needs no network and no `load` (hidden admin commands, economy exploits), nor data leaving
+  through client events or a trusted resource's exports.
+- It runs **inside the same Lua VM** as the code it guards. Every bypass we know of is closed and has a test
+  (`InvokeNative`, native stubs, `debug.getupvalue`, bytecode, redirects, table metamethods…), but it is not a hard sandbox.
+- An approved host that is itself malicious stays approved. `torii approve` warns about hosts where anyone can publish
+  (`pastebin.com`, `*.github.io`…) or receive data (`discord.com`…): scope them with a path prefix.
+- The manifest line is a request to be protected. If it is missing, FXServer still starts the resource; torii's
+  gate is what catches that. Escrow-protected (`.fxap`) resources are untested.
 
-* **Server-side Lua only.** JavaScript and C# server scripts are *flagged*, not inspected, and the most recent
-  public backdoor family is JavaScript. Pair torii with an OS-level egress firewall.
-* A resource can do harm with no network and no `load` (hidden admin commands, economy exploits). torii does not see that.
-* Data can leave through channels other than HTTP (client events, trusted resources' exports).
-* An approved host that is itself malicious or compromised stays approved.
-* torii runs inside the same Lua VM as the code it guards. It closes the bypasses we know of
-  (`Citizen.InvokeNative`, lazily loaded native stubs, `debug.getupvalue`, bytecode, `require`'d libraries,
-  redirects, table metamethods...), each with a test, but it is not a hard sandbox.
-* The manifest approach fails open (a missing line is only noticed by the core's gate). Escrow-protected
-  (`.fxap`) resources are untested.
+## Questions
 
-## Development
+<details><summary><b>Will it slow my server down?</b></summary>
+
+Only the sensitive natives are wrapped. A micro-benchmark on build 36897 measured about +70 to +140 ns per wrapped
+call; capturing the call site (`file:line`) costs more (~+800 ns) and only happens when an event is logged, never on
+the fast path.
+</details>
+
+<details><summary><b>Does it break ox_lib and friends?</b></summary>
+
+Libraries that compile code with `load` need `torii_dynamic_code`. In observe mode they show up in the log, and
+`approve --from-logs` proposes the grant (with a warning you should read).
+</details>
+
+<details><summary><b>Can a malicious resource just remove the torii line?</b></summary>
+
+At runtime it cannot (rewriting a manifest through `SaveResourceFile` is blocked). If it ships without the line, the
+core's manifest gate reports it, and in enforce mode refuses to start it.
+</details>
+
+<details><summary><b>Can a resource lie in the logs?</b></summary>
+
+Only about itself: the core attributes reports with `GetInvokingResource()`. A hostile resource can forge its *own*
+events, which is why `approve` only ever proposes a diff and never writes without `--write`.
+</details>
+
+## Roadmap
+
+- [x] Lua runtime: HTTP, dynamic code, `InvokeNative`, upvalue hardening, manifest gate
+- [x] Observe / enforce modes, lockfile with declaration hashes, JSON-lines log
+- [x] CLI: `install`, `uninstall`, `status`, `approve --from-logs`
+- [ ] Recorded demo GIF, published npm package
+- [ ] Known-library presets (ox_lib, oxmysql…) for `approve`
+- [ ] Export / event filtering between resources
+- [ ] Alerts to a webhook, txAdmin integration
+- [ ] JavaScript runtime shim (a separate effort: Node has many more sinks)
+
+See [docs/roadmap.md](docs/roadmap.md) for the reasoning behind the order.
+
+## Project
+
+| | |
+|---|---|
+| [docs/threat-model.md](docs/threat-model.md) | what torii stops, reports, and cannot see |
+| [docs/feasibility.md](docs/feasibility.md) · [docs/experiments-results.md](docs/experiments-results.md) | how it was designed, and what was checked on a real server |
+| [docs/brand.md](docs/brand.md) | name, logo, palette |
+| [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) | contributing, reporting a bypass |
 
 ```bash
-luarocks install busted luacheck       # Lua 5.4
-busted                                 # unit tests with simulated natives
-luacheck .  &&  stylua --check torii spec
-npm test                               # CLI tests (node:test, no dependencies)
+busted                                   # 84 specs, FiveM natives simulated
+luacheck . && stylua --check torii spec  # lint + format
+npm test                                 # CLI tests, no dependencies
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
-Design record: [docs/feasibility.md](docs/feasibility.md), [docs/experiments-results.md](docs/experiments-results.md).
-
-## License
-
-MIT, see [LICENSE](LICENSE).
+<p align="center">
+  <br>
+  <img alt="torii" src="assets/logo/torii-mark-transparent.svg" width="96"><br>
+  <sub>MIT licensed · found a bypass? <a href="SECURITY.md">tell us</a>, we'll add the test.</sub>
+</p>
