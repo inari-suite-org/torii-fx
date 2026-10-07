@@ -88,6 +88,41 @@ describe('url.parse', function()
 	end)
 end)
 
+describe('url.parse IPv6 canonical form (RFC 5952, as libcurl prints it)', function()
+	local function host(raw)
+		return assert(url.parse(raw), raw).host
+	end
+
+	it('gives every spelling of an address the same text', function()
+		assert.are.equal('::1', host('http://[::1]/'))
+		assert.are.equal('::1', host('http://[0:0:0:0:0:0:0:1]/'))
+		assert.are.equal('::1', host('http://[0000:0::0001]/'))
+		assert.are.equal('2606:4700:4700::1111', host('http://[2606:4700:4700:0:0:0:0:1111]/'))
+		assert.are.equal('2606:4700:4700::1111', host('http://[2606:4700:4700::1111]/'))
+		assert.are.equal('2001:db8::1:0:0:1', host('http://[2001:db8:0:0:1:0:0:1]/'), 'first run on a tie')
+		assert.are.equal(
+			'2001:db8:0:1:1:1:1:1',
+			host('http://[2001:db8:0:1:1:1:1:1]/'),
+			'a single zero is not compressed'
+		)
+		assert.are.equal('::', host('http://[::]/'))
+	end)
+
+	it('writes IPv4-mapped addresses with a dotted quad', function()
+		assert.are.equal('::ffff:127.0.0.1', host('http://[::ffff:7f00:1]/'))
+		assert.are.equal('::ffff:127.0.0.1', host('http://[0:0:0:0:0:ffff:7f00:0001]/'))
+		assert.are.equal('::ffff:127.0.0.1', host('http://[::FFFF:127.0.0.1]/'))
+	end)
+
+	it('lets an allow-list entry match whatever spelling the request uses', function()
+		local policy = require('policy')
+		local p = policy.new({ version = 1, resources = { r = { http = { 'http://[2606:4700:4700::1111]' } } } })
+		assert.is_true(p:check_http('r', 'http://[2606:4700:4700:0:0:0:0:1111]/x').allow)
+		assert.is_true(p:check_http('r', 'http://[2606:4700:4700:0000::1111]/x').allow)
+		assert.is_false(p:check_http('r', 'http://[2606:4700:4700::1112]/x').allow)
+	end)
+end)
+
 describe('url.classify_host', function()
 	local function reason(raw)
 		return url.classify_host(assert(parse(raw), raw))

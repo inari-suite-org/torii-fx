@@ -8,7 +8,6 @@ tell us what hurts.
 | Item | Why |
 |---|---|
 | Run the research resources against a real FXServer on a schedule | torii depends on FXServer details (native hashes, stub names, redirect behaviour). A nightly job against the latest artifact would tell us the day one of them changes, instead of a user telling us. |
-| Differential test of the URL parser against libcurl | the parser is deliberately stricter than curl, but any difference in how a URL is read is a possible bypass. Comparing the two on generated inputs finds the cases by machine instead of by imagination. |
 | Windows job in CI | most FiveM servers run on Windows, and the CLI edits files and manifests. |
 | Signed releases with build provenance | a security tool should let people verify what they download. |
 | Test with an Asset Escrow resource | the one limit we mention without having measured it ([research/README.md](../research/README.md)). |

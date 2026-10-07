@@ -160,6 +160,44 @@ local function parse_ipv6(s)
 	return out
 end
 
+--- Canonical text form of an IPv6 address (RFC 5952), the form libcurl prints: lower-case hex without leading
+--- zeros, the longest run of two or more zero groups written "::" (the first one on a tie), and IPv4-mapped
+--- addresses written "::ffff:a.b.c.d". Every spelling of the same address gets the same text, so an allow-list entry
+--- matches however the request writes it.
+---@param g table 8 groups
+---@return string
+function M.format_ipv6(g)
+	if g[1] == 0 and g[2] == 0 and g[3] == 0 and g[4] == 0 and g[5] == 0 and g[6] == 0xffff then
+		return format('::ffff:%d.%d.%d.%d', g[7] >> 8, g[7] & 255, g[8] >> 8, g[8] & 255)
+	end
+	local best_start, best_len, i = 0, 0, 1
+	while i <= 8 do
+		if g[i] == 0 then
+			local j = i
+			while j <= 8 and g[j] == 0 do
+				j = j + 1
+			end
+			if j - i > best_len then
+				best_start, best_len = i, j - i
+			end
+			i = j
+		else
+			i = i + 1
+		end
+	end
+	local function hex_range(from, to)
+		local out = {}
+		for k = from, to do
+			out[#out + 1] = format('%x', g[k])
+		end
+		return concat(out, ':')
+	end
+	if best_len < 2 then
+		return hex_range(1, 8)
+	end
+	return hex_range(1, best_start - 1) .. '::' .. hex_range(best_start + best_len, 8)
+end
+
 -- Address classification -----------------------------------------------------------------------------
 
 --- Returns a reason string when the IPv4 address is not a public unicast address.
@@ -452,7 +490,7 @@ function M.parse(raw)
 			end
 		end
 		kind = 'ipv6'
-		host = lower(inner)
+		host = M.format_ipv6(ip)
 	else
 		local colons = 0
 		for _ in string.gmatch(authority, ':') do

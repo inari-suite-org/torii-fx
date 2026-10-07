@@ -19,6 +19,16 @@ console. Nothing here uses the network except `exp10`, which talks to a Python s
 
 None of these resources prints file contents, secrets or convar values.
 
+## URL parser against libcurl
+
+`url-differential/` generates URLs and compares how torii's parser and curl read them (scheme, host, port). It needs Lua 5.4 and curl 8.1 or later, and sends nothing over the network: curl's connections go to a closed local port.
+
+```bash
+node research/url-differential/run.mjs 3000 20261008   # count, seed
+```
+
+It exits with an error if torii accepts a URL that curl reads differently.
+
 ## Asset Escrow (not yet verified)
 
 Needs a resource protected by Cfx Asset Escrow that you own, on a server whose license belongs to the same Cfx
