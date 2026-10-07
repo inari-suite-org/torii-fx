@@ -1,4 +1,4 @@
-# torii — Phase 1 experiments
+# torii - Phase 1 experiments
 
 Minimal test resources that turn the **[A]** assumptions of `docs/feasibility.md` §7 into **[V]**.
 Run them on a **dev server only**. They use no network (except exp10, localhost only), write nothing
@@ -11,7 +11,7 @@ Send me the console output for each experiment, plus the artifact build (`versio
 
 ---
 
-## exp01 — Does `@provider/init.lua` load when the provider is stopped or missing? (§7.1)
+## exp01 - Does `@provider/init.lua` load when the provider is stopped or missing? (§7.1)
 
 Also checks the load order claim: shared scripts run before server scripts, whatever the manifest order.
 
@@ -23,9 +23,9 @@ Also checks the load order claim: shared scripts run before server scripts, what
 | Observe | the `[exp01]` lines; any `Failed to load script` message; whether "consumer started" still appears |
 | **A is valid if** | order is `provider-init > late_shared > server` (shared before server although `server_script` is declared first) |
 | **B is valid if** | `provider-init` still appears (the included file does not need the provider to be started) |
-| **C** | expected: an error/warning about the missing script **and** the consumer still starts. If the consumer does NOT start, the "fails open" claim in §1.2 is wrong (good news for us) — tell me. |
+| **C** | expected: an error/warning about the missing script **and** the consumer still starts. If the consumer does NOT start, the "fails open" claim in §1.2 is wrong (good news for us) - tell me. |
 
-## exp02 — Custom manifest keys, metadata before start, and `CancelEvent` (§7.2)
+## exp02 - Custom manifest keys, metadata before start, and `CancelEvent` (§7.2)
 
 | | |
 |---|---|
@@ -35,7 +35,7 @@ Also checks the load order claim: shared scripts run before server scripts, what
 | **Valid if** | in `onResourceStarting`, `torii_http` has count=2 with the two values, `torii_dynamic_code` count=1, `torii_not_declared` count=0, `shared_script` lists `shared.lua`; no warning for custom keys; in run B the victim does **not** run and the 2s state is not `started` |
 | **Invalid if** | counts are 0 before start (metadata unavailable → the manifest gate needs another approach), or the victim still starts after `CancelEvent()` |
 
-## exp03 — Natives mode, stub origin, hash spellings (§7.3)
+## exp03 - Natives mode, stub origin, hash spellings (§7.3)
 
 | | |
 |---|---|
@@ -44,7 +44,7 @@ Also checks the load order claim: shared scripts run before server scripts, what
 | Reads | metatable present + `rawget before=nil, after=function` → lazy natives mode. No metatable → full natives file mode. The `source` column tells me how native stubs are named in this mode (I need it to write the policy for phase 1). |
 | Hash | the real invocation hash must come from the artifact itself. Search the artifact folder `citizen/scripting/lua/` for the native name and send me the matching line(s): `findstr /s /i "PerformHttpRequestInternalEx" "<artifact>\citizen\scripting\lua\*.lua"` (run it for `ExecuteCommand`, `SetHttpHandler` and `GetConvar` too; the file may be absent in lazy mode, then tell me). Compare with the `GetHashKey` candidates printed by the test. |
 
-## exp04 — Does patching `debug.getupvalue` break the scheduler? (§7.4)
+## exp04 - Does patching `debug.getupvalue` break the scheduler? (§7.4)
 
 **Deferred to the wrapper step.** The side effects of patching `debug.getupvalue` (stack traces, boundaries
 in `scheduler.lua`) and the proof that `@citizen:/…` functions are refused cannot be tested without writing
@@ -52,7 +52,7 @@ the patch itself, so they will be implemented together with their automated test
 Nothing to run now. One thing to note from exp03: the stub source names decide which prefixes the refusal
 rule must cover, so exp03's output is the input for that test.
 
-## exp05 — Escrowed (Cfx Asset Escrow) resources accept the injected line? (§7.5)
+## exp05 - Escrowed (Cfx Asset Escrow) resources accept the injected line? (§7.5)
 
 No code needed; it uses `exp01_provider`.
 
@@ -64,7 +64,7 @@ No code needed; it uses `exp01_provider`.
 | **Invalid if** | the manifest edit is rejected, the resource refuses to start, or the line never appears. Then a large share of paid resources cannot be covered by the manifest approach. |
 | Cleanup | restore your backup of the manifest |
 
-## exp06 — Artifact build and the cross-resource write protection (§7.6)
+## exp06 - Artifact build and the cross-resource write protection (§7.6)
 
 | | |
 |---|---|
@@ -76,7 +76,7 @@ No code needed; it uses `exp01_provider`.
 | **Invalid if** | cross writes succeed in run A → your artifact predates the protection (that is the answer I need for the version check). Tell me the build number. |
 | Cleanup | delete `own.txt` and `from_writer_*.txt`; remove the `add_filesystem_permission` line |
 
-## exp07 — How far can `io.open` read? (§7.7)
+## exp07 - How far can `io.open` read? (§7.7)
 
 Prints only success/failure and whether the file starts with `CANARY`. Create harmless canary files only.
 
@@ -87,7 +87,7 @@ Prints only success/failure and whether the file starts with `CANARY`. Create ha
 | Observe | OK/FAILED and the error text for each |
 | **Reads** | own-resource `@` path should work. Whether absolute host paths and other resources' files are readable decides how much `io.open` must be policed in v0.1 (it matters for reading secrets such as the server config). Do NOT test against real secret files. |
 
-## exp08 — Overhead of a wrapper layer (§7.8)
+## exp08 - Overhead of a wrapper layer (§7.8)
 
 | | |
 |---|---|
@@ -96,7 +96,7 @@ Prints only success/failure and whether the file starts with `CANARY`. Create ha
 | **Valid if** | the lookup wrapper adds well under ~1 µs per call. Call-site capture is expected to be much slower, which is why the design only captures it when a decision is logged, never on the fast path. |
 | **Invalid if** | even the simple wrapper costs several µs per call: then interception of every native is too heavy and we restrict wrapping to the sensitive natives only. |
 
-## exp10 — Does the HTTP native follow redirects? (§3 / your addition 3)
+## exp10 - Does the HTTP native follow redirects? (§3 / your addition 3)
 
 Localhost only; requires Python 3.
 

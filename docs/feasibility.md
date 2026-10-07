@@ -1,4 +1,4 @@
-# torii — Phase 0 feasibility study
+# torii - Phase 0 feasibility study
 
 > This is the study written before any code. Several [A] assumptions were later tested; see
 > [experiments-results.md](experiments-results.md) for what held and what changed, and
@@ -72,7 +72,7 @@ Short links used below:
 
 ## 1. Runtime isolation and injection
 
-### 1.1 One Lua state per resource — yes
+### 1.1 One Lua state per resource - yes
 
 - `LuaScriptRuntime` is created per resource and owns its own `lua_State` (`m_state`) [V]
   (`F/code/components/citizen-scripting-lua/src/LuaScriptRuntime.cpp`, `Create()` around L1300-1425).
@@ -226,7 +226,7 @@ Constraints found during the study:
   `fx_version` / `game` (before any other directive) is the least fragile edit: no need to parse the
   existing tables, and order is guaranteed [V, §1.2].
 - Escrowed (Cfx Asset Escrow) resources: the manifest is believed to be plain text and editable, and their code
-  runs in the same Lua state, so torii should apply [A — **must be tested**; if escrow rejects manifest edits,
+  runs in the same Lua state, so torii should apply [A - **must be tested**; if escrow rejects manifest edits,
   a large part of paid resources would be out of reach].
 
 Proposed flow (3 steps, matches the README goal):
@@ -305,7 +305,7 @@ servers. They do **not** control the server artifact, `server.cfg`, or the torii
 
 ### Decisions I need from you (with trade-offs)
 
-**D1 — Where do permissions live? (most important)**
+**D1 - Where do permissions live? (most important)**
 | Option | Pros | Cons |
 |---|---|---|
 | a) Only in the resource manifest (`torii_http 'api.example.com'`, `torii_dynamic_code 'yes'`) | Simple, close to your brief, travels with the resource | **Attacker-controlled**: a backdoor declares its own C2 domain. Defeats the purpose. |
@@ -315,25 +315,25 @@ servers. They do **not** control the server artifact, `server.cfg`, or the torii
 Custom keys such as `torii_http` are allowed in manifests and readable with `GetResourceMetadata` (the ox
 ecosystem uses its own keys) [D/A, to confirm no warning is printed].
 
-**D2 — Policy for `load`**: it is everywhere in legit code (ox_lib).
+**D2 - Policy for `load`**: it is everywhere in legit code (ox_lib).
 - a) Per-resource boolean `dynamic_code` (simple, coarse).
 - b) Boolean + automatic allowance when the caller's source is an approved library chunk such as
   `@@ox_lib/…` [A: chunk names can be spoofed only by code that already passed `load`].
 - c) Provenance check: allow `load` only on strings that came out of `LoadResourceFile` (exact match)
-  — breaks with ox_lib, which concatenates two files.
+  - breaks with ox_lib, which concatenates two files.
 Recommendation: **b**, with bytecode always denied.
 
-**D3 — CLI language**
+**D3 - CLI language**
 - a) Node.js (`npx torii-fx install`): quick to write and test, but admins need Node.
 - b) Go / Rust single binary: best for admins (download and run, Windows + Linux), adds a second language to the repo.
 - c) Lua script: same language as the project, but admins rarely have a Lua interpreter.
 Recommendation: **a** for v0.1, with a single-binary build later if people adopt it.
 
-**D4 — Injection method**
+**D4 - Injection method**
 - a) Manifest line + manifest gate (recommended for v0.1: supported, reversible).
 - b) Artifact patch of `scheduler.lua` as an optional "hardened" mode later, once tested [A].
 
-**D5 — v0.1 scope** (your brief + what this study found indispensable)
+**D5 - v0.1 scope** (your brief + what this study found indispensable)
 - Must: HTTP (all four paths, B1-B2), `load` (+ forced text mode), `debug.getupvalue` / `nativeEnv` hardening
   (B3-B6), self-manifest write guard, manifest gate with JS/C# flagging, observe/enforce, console + JSON lines.
 - Should (observe only, cheap): `GetConvar` on sensitive names, `ExecuteCommand`, `SetHttpHandler`.
