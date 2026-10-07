@@ -199,7 +199,11 @@ function approve(dir, flags, io) {
  * @param {{ out: (s: string) => void, err: (s: string) => void }} io
  * @returns {number} exit code
  */
-export function main(argv, io = { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) }) {
+export function main(argv, rawIo = { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) }) {
+  // Everything printed may contain text taken from logs, manifests or folder names: neutralise terminal
+  // control characters (ANSI escapes, backspace, carriage return...) but keep newlines and tabs.
+  const clean = (text) => String(text).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '?');
+  const io = { out: (text) => rawIo.out(clean(text)), err: (text) => rawIo.err(clean(text)) };
   const { positional, flags } = parseArgs(argv);
   const command = positional[0];
   if (!command || command === 'help' || flags.help) {

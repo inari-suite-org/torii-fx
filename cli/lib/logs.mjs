@@ -45,7 +45,7 @@ export function readEvents(file) {
  * @returns {{ entry: string, warnings: string[] } | null}
  */
 export function targetToEntry(target) {
-  const match = /^(https?):\/\/(\[[^\]]+\]|[^/:]+)(:\d+)?(\/.*)?$/.exec(target ?? '');
+  const match = /^(https?):\/\/(\[[0-9a-fA-F:.]+\]|[A-Za-z0-9.-]+)(:\d{1,5})?(\/[!-~]*)?$/.exec(target ?? '');
   if (!match) return null;
   const [, scheme, host, port = '', pathPart = '/'] = match;
   const warnings = [];
@@ -81,7 +81,8 @@ export function proposalFromEvents(events) {
 
   for (const event of events) {
     const resource = event.resource;
-    if (typeof resource !== 'string' || resource === 'torii') continue;
+    // log lines are untrusted input: only plain resource names become keys of the proposal
+    if (typeof resource !== 'string' || resource === 'torii' || !/^[\w.\-[\]]{1,100}$/.test(resource)) continue;
     if (event.type === 'http' && (event.decision === 'would_deny' || event.decision === 'deny')) {
       if (NEVER_PROPOSE.test(event.reason ?? '')) {
         notes.push(`${resource}: ${event.target} is always refused (${event.reason}), not proposed`);

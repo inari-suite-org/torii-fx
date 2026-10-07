@@ -220,3 +220,49 @@ test('error handling: missing arguments, unknown commands, missing log', () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('terminal escape sequences in logs, names and targets never reach the terminal', () => {
+  const root = tempDir();
+  try {
+    const esc = '\u001b[2J\u001b[31m';
+    const log = path.join(root, 'torii.jsonl');
+    fs.writeFileSync(
+      log,
+      [
+        { resource: `evil${esc}`, type: 'http', decision: 'would_deny', reason: 'x', target: 'https://a.example/' },
+        { resource: 'ok', type: 'http', decision: 'would_deny', reason: `loopback_address${esc}`, target: `http://127.0.0.1/${esc}` },
+        { resource: 'ok', type: 'http', decision: 'would_deny', reason: 'x', target: `https://host${esc}.example/` },
+        { resource: 'ok', type: 'http', decision: 'would_deny', reason: 'x', target: `https://good.example/p${esc}` },
+      ]
+        .map((event) => JSON.stringify(event))
+        .join('\n'),
+    );
+    const result = run(['approve', root, '--from-logs', log, '--lock', path.join(root, 'lock.json')]);
+    assert.ok(!result.out.includes('\u001b'), 'no raw escape in output');
+    assert.ok(!result.out.includes('evil'), 'resource names with control characters are dropped');
+    assert.ok(!result.out.includes('host'), 'targets outside the strict host grammar are dropped');
+    assert.equal(targetToEntry(`https://a.example/${esc}`), null);
+    assert.equal(targetToEntry('https://[::1]:8080/x').entry, '[::1]:8080/x');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test(
+  'install refuses to write through a symlinked backup path',
+  { skip: process.platform === 'win32' && 'creating symlinks needs privileges on Windows' },
+  () => {
+    const root = tempDir();
+    try {
+      const victim = path.join(root, 'victim.txt');
+      fs.writeFileSync(victim, 'untouched');
+      const dir = writeResource(root, 'res', MANIFEST);
+      fs.symlinkSync(victim, path.join(dir, 'fxmanifest.lua.torii.bak'));
+      const result = run(['install', root]);
+      assert.equal(result.code, 1);
+      assert.equal(fs.readFileSync(victim, 'utf8'), 'untouched');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  },
+);

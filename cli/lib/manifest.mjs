@@ -93,6 +93,20 @@ export function removeInstallLine(text) {
   return lines.join(eol);
 }
 
+/** True for an existing plain file (a symlink is not one). */
+function isRegularFile(file) {
+  try {
+    return fs.lstatSync(file).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** Refuses to write through symlinks: a hostile resource folder must not redirect our writes elsewhere. */
+function assertRegularFile(file) {
+  if (!isRegularFile(file)) throw new Error(`refusing to touch ${file}: not a regular file (symlink?)`);
+}
+
 export const backupPath = (manifestPath) => `${manifestPath}.torii.bak`;
 
 /**
@@ -105,8 +119,14 @@ export function installInto(resource, { dryRun = false } = {}) {
   if (info.installed) return 'already';
   if (!info.hasServerCode) return 'no-server-code';
   if (!dryRun) {
-    const backup = backupPath(resource.manifestPath);
-    if (!fs.existsSync(backup)) fs.writeFileSync(backup, text);
+    assertRegularFile(resource.manifestPath);
+    // 'wx' = exclusive create: fails if the path exists, including as a symlink, and never follows one.
+    try {
+      fs.writeFileSync(backupPath(resource.manifestPath), text, { flag: 'wx' });
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      assertRegularFile(backupPath(resource.manifestPath)); // an existing backup must be a plain file
+    }
     fs.writeFileSync(resource.manifestPath, addInstallLine(text));
   }
   return 'installed';
@@ -118,9 +138,10 @@ export function uninstallFrom(resource, { dryRun = false } = {}) {
   const next = removeInstallLine(text);
   if (next === text) return 'absent';
   if (!dryRun) {
+    assertRegularFile(resource.manifestPath);
     fs.writeFileSync(resource.manifestPath, next);
     const backup = backupPath(resource.manifestPath);
-    if (fs.existsSync(backup) && fs.readFileSync(backup, 'utf8') === next) fs.unlinkSync(backup);
+    if (isRegularFile(backup) && fs.readFileSync(backup, 'utf8') === next) fs.unlinkSync(backup);
   }
   return 'removed';
 }
