@@ -1,7 +1,7 @@
 std = "lua54"
 max_line_length = 120
 codes = true
-exclude_files = { "dev-server/", "experiments/", "**/fxmanifest.lua", "node_modules/" }
+exclude_files = { "dev-server/", "experiments/", "**/fxmanifest.lua", "node_modules/", ".luarocks/", ".lua/", "lua_modules/" }
 
 -- FiveM / Cfx globals used by torii.
 globals = {
