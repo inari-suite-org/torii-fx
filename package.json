@@ -1,0 +1,15 @@
+{
+  "name": "torii-fx",
+  "version": "0.1.0",
+  "description": "Runtime permission firewall for FiveM server-side Lua resources (CLI companion)",
+  "type": "module",
+  "license": "MIT",
+  "bin": { "torii": "cli/torii.mjs" },
+  "files": ["cli", "torii", "README.md", "LICENSE"],
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "test": "node --test cli/test/*.test.mjs",
+    "test:lua": "busted",
+    "lint": "luacheck . && stylua --check torii spec"
+  }
+}

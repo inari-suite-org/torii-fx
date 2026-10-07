@@ -1,5 +1,9 @@
 # torii — Phase 0 feasibility study
 
+> This is the study written before any code. Several [A] assumptions were later tested; see
+> [experiments-results.md](experiments-results.md) for what held and what changed, and
+> [threat-model.md](threat-model.md) for the current threat model.
+
 > Status: draft for review. No production code has been written.
 > Date: 2026-10-07.
 > FXServer source pinned to `citizenfx/fivem@e34d12c` (master, 2026-09-30) and

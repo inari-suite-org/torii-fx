@@ -180,6 +180,16 @@ function Policy:is_exempt(name)
 	return self.exempt[name] == true
 end
 
+--- A host is a poor allow-list entry when anybody can host content there (a path prefix does not help)
+--- or, for shared APIs such as Discord, when no path prefix narrows it down to one account.
+local function risk_of(entry, host)
+	local risk = url.host_risk(host)
+	if risk == 'user_content' or (risk == 'shared_api' and entry.path == '/') then
+		return risk
+	end
+	return nil
+end
+
 local function describe(parsed)
 	local default_port = parsed.scheme == 'https' and 443 or 80
 	local host = parsed.kind == 'ipv6' and '[' .. parsed.host .. ']' or parsed.host
@@ -219,7 +229,7 @@ function Policy:check_http(resource, raw_url)
 				reason = 'allowed',
 				target = target,
 				host = parsed.host,
-				risk = entry.path == '/' and url.host_risk(parsed.host) or nil,
+				risk = risk_of(entry, parsed.host),
 			}
 		end
 	end

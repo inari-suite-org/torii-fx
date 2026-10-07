@@ -23,10 +23,24 @@ dev server. Raw protocol: `experiments/README.md`. Exp 04 was deferred (see belo
 | 10 | Raw native without the key | Only `/start` was requested; `/final` was **not** fetched. The native's own default is "do not follow"; it is `scheduler.lua` that sets `followLocation = true` by default. | Confirmed |
 | 10 | Redirect cap | `/loop` (redirects to itself) produced about 6,000 requests in a few seconds, then failed with status 0. There is **no small hop cap**; the request ends by timeout. | Confirmed |
 
+## Resolved during the build
+
+- **Exp 04** (does the `debug.getupvalue` patch break the scheduler?): with the final guard installed, a resource
+  that throws errors from a thread, an event handler and a timeout, calls an export, and catches an error with
+  `pcall`, produced exactly the same `SCRIPT ERROR` lines as the same resource without torii. Exports, events and
+  threads kept working. (Live run on build 36897; the unit tests in `spec/guard_spec.lua` prove the refusal itself.)
+- **End to end** (build 36897): `torii install` on a resources folder, a resource calling `https://example.com/`,
+  a fake host and `load`, observe mode (all logged as `WOULD BLOCK`, everything still works), `torii approve
+  --from-logs` (diff, then `--write`), lockfile trimmed by hand, enforce mode: approved host answered 200, the other
+  host was blocked and the callback saw status 0, `load` worked because it was granted, and no
+  `declaration_changed` report appeared (the Lua and Node declaration hashes agree on a real manifest).
+- **Demo** (`demo/torii_demo_backdoor`): in observe mode the 5 attempts are logged; in enforce mode they are
+  blocked (including the direct `Citizen.InvokeNative` call and the manifest rewrite); the manifest gate cancels
+  the start of a resource without the torii line (`Couldn't start resource`); the JSON-lines log is written
+  through `io.open(..., 'a')` from the core.
+
 ## Not run
 
-- **Exp 04** (`debug.getupvalue` patch side effects): needs the patch itself; it will be written with its automated
-  test. Input from exp 03: stub chunk names are `@Name.lua`, so the refusal rule must match them too.
 - **Exp 05** (escrow-protected resource accepts the injected line): needs an escrowed resource. Still open.
 
 ## Consequences for the design

@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lua:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leafo/gh-actions-lua@v10
+        with:
+          luaVersion: "5.4"
+      - uses: leafo/gh-actions-luarocks@v4
+      - name: Install busted and luacheck
+        run: luarocks install busted && luarocks install luacheck
+      - name: Lint
+        run: luacheck .
+      - uses: JohnnyMorganz/stylua-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: latest
+          args: --check torii spec
+      - name: Unit tests (simulated natives)
+        run: busted
+
+  cli:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [18, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm test

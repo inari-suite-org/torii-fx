@@ -1,2 +1,6 @@
 # Local FiveM dev server (contains the license key, artifacts and logs)
 dev-server/
+
+# torii runtime logs
+torii/logs/*.jsonl
+node_modules/
