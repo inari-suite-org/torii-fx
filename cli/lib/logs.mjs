@@ -41,6 +41,13 @@ export function riskWarning(host, hasPath) {
   return null;
 }
 
+const RESERVED_NAMES = new Set(['__proto__', 'constructor', 'prototype', 'hasOwnProperty', 'toString', 'valueOf']);
+
+/** Resource names become object keys: plain identifiers only, never names that collide with Object.prototype. */
+export function isSafeResourceName(name) {
+  return typeof name === 'string' && /^[\w.\-[\]]{1,100}$/.test(name) && !RESERVED_NAMES.has(name);
+}
+
 /** Parses a JSON-lines file, ignoring blank and corrupt lines. */
 export function readEvents(file) {
   const events = [];
@@ -83,8 +90,8 @@ export function targetToEntry(target) {
  * @returns {{ additions: Record<string, { http: string[], dynamic_code: boolean }>, notes: string[] , warnings: Record<string, string[]> }}
  */
 export function proposalFromEvents(events) {
-  const additions = {};
-  const warnings = {};
+  const additions = Object.create(null);
+  const warnings = Object.create(null);
   const notes = [];
   const get = (name) => (additions[name] ??= { http: [], dynamic_code: false });
   const warn = (name, text) => ((warnings[name] ??= []).includes(text) ? 0 : warnings[name].push(text));
@@ -92,10 +99,10 @@ export function proposalFromEvents(events) {
   for (const event of events) {
     const resource = event.resource;
     // log lines are untrusted input: only plain resource names become keys of the proposal
-    if (typeof resource !== 'string' || resource === 'torii' || !/^[\w.\-[\]]{1,100}$/.test(resource)) continue;
+    if (resource === 'torii' || !isSafeResourceName(resource)) continue;
     if (event.type === 'http' && (event.decision === 'would_deny' || event.decision === 'deny')) {
       if (NEVER_PROPOSE.test(event.reason ?? '')) {
-        notes.push(`${resource}: ${event.target} is always refused (${event.reason}), not proposed`);
+        notes.push(`${resource}: ${JSON.stringify(String(event.target).slice(0, 200))} is always refused (${JSON.stringify(String(event.reason).slice(0, 80))}), not proposed`);
         continue;
       }
       const converted = targetToEntry(event.target);

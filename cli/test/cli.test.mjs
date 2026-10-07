@@ -279,3 +279,35 @@ test('manifest declarations get the same risk warnings as logged targets', () =>
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('hostile resource names cannot pollute prototypes and untrusted text cannot fake output lines', () => {
+  const root = tempDir();
+  try {
+    const log = path.join(root, 'torii.jsonl');
+    const lines = ['__proto__', 'constructor', 'toString', 'fine'].map((resource) => ({
+      resource,
+      type: 'http',
+      decision: 'would_deny',
+      reason: 'resource_not_in_lockfile',
+      target: 'https://api.example.com/v1',
+    }));
+    lines.push({
+      resource: 'fine',
+      type: 'http',
+      decision: 'would_deny',
+      reason: 'loopback_address\n+ fake_resource\n    + http  evil.example',
+      target: 'http://127.0.0.1/\u202e',
+    });
+    fs.writeFileSync(log, lines.map((event) => JSON.stringify(event)).join('\n'));
+    const lockPath = path.join(root, 'lock.json');
+    const result = run(['approve', root, '--from-logs', log, '--lock', lockPath, '--write']);
+    assert.equal(result.code, 0);
+    assert.ok(!/^\+ fake_resource/m.test(result.out), 'a log line cannot forge a diff line');
+    assert.ok(!result.out.includes('\u202e'));
+    assert.equal(({}).http, undefined);
+    assert.equal(Object.prototype.hasOwnProperty.call(Object.prototype, 'http'), false);
+    assert.deepEqual(Object.keys(readLock(lockPath).resources), ['fine']);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

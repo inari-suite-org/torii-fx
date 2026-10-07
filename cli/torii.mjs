@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { declarationHash, parseDeclaration } from './lib/declaration.mjs';
 import { diffLocks, mergeAdditions, readLock, writeLock } from './lib/lock.mjs';
-import { proposalFromEvents, readEvents, riskWarning } from './lib/logs.mjs';
+import { isSafeResourceName, proposalFromEvents, readEvents, riskWarning } from './lib/logs.mjs';
 import { findResources, inspectManifest, installInto, isEscrowed, uninstallFrom } from './lib/manifest.mjs';
 
 const HELP = `torii - runtime permission firewall for FiveM Lua resources
@@ -112,15 +112,15 @@ function status(dir, io) {
 function approve(dir, flags, io) {
   const lockPath = flags.lock ?? path.join(dir, 'torii', 'policy.lock.json');
   const lock = readLock(lockPath);
-  const additions = {};
-  const warnings = {};
+  const additions = Object.create(null);
+  const warnings = Object.create(null);
   const warn = (name, text) => {
     warnings[name] ??= [];
     if (!warnings[name].includes(text)) warnings[name].push(text);
   };
-  const declarations = {};
+  const declarations = Object.create(null);
 
-  for (const resource of findResources(dir)) {
+  for (const resource of findResources(dir).filter((r) => isSafeResourceName(r.name))) {
     declarations[resource.name] = parseDeclaration(fs.readFileSync(resource.manifestPath, 'utf8'));
   }
 
@@ -202,7 +202,7 @@ function approve(dir, flags, io) {
 export function main(argv, rawIo = { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) }) {
   // Everything printed may contain text taken from logs, manifests or folder names: neutralise terminal
   // control characters (ANSI escapes, backspace, carriage return...) but keep newlines and tabs.
-  const clean = (text) => String(text).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '?');
+  const clean = (text) => String(text).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/g, '?');
   const io = { out: (text) => rawIo.out(clean(text)), err: (text) => rawIo.err(clean(text)) };
   const { positional, flags } = parseArgs(argv);
   const command = positional[0];
