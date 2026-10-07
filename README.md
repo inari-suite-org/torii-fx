@@ -9,7 +9,7 @@ approves it once. Everything else is blocked, or logged first while you get comf
 ```
 
 <!-- Demo GIF goes here: docs/demo.gif (record `ensure torii_demo_backdoor` in observe, then in enforce mode). -->
-<p align="center"><em>demo GIF: <code>docs/demo.gif</code> (to be recorded)</em></p>
+<p align="center"><em>demo GIF: <code>docs/demo.gif</code> (to be recorded). Real console transcript: <a href="docs/demo.md">docs/demo.md</a></em></p>
 
 ## The problem
 

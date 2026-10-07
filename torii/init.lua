@@ -49,8 +49,19 @@ local function req(name)
 	return module
 end
 
+-- The core is not running (not started yet, or stopped): keep the console informed about what matters,
+-- stay silent about routine events such as attestation.
 local function report_fallback(event)
-	print_(('[torii] %s %s %s'):format(resource, tostring_(event.type), tostring_(event.reason)))
+	if event.level == 'warn' then
+		print_(
+			('[torii] %s %s %s %s'):format(
+				resource,
+				tostring_(event.type),
+				tostring_(event.decision),
+				tostring_(event.reason)
+			)
+		)
+	end
 end
 
 -- Report through the torii resource. The core attributes the event with GetInvokingResource(), so a
