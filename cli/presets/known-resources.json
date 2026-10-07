@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "presets": [
+    {
+      "id": "ox_lib",
+      "resources": ["ox_lib"],
+      "origin": "https://github.com/overextended/ox_lib",
+      "originHint": "github.com/overextended/ox_lib",
+      "checked": {
+        "commit": "66906c5",
+        "date": "2026-10-03",
+        "scope": "every tracked .lua file",
+        "lookedFor": ["PerformHttpRequest", "load", "loadstring", "SaveResourceFile", "SetHttpHandler", "ExecuteCommand"]
+      },
+      "grants": { "dynamic_code": true, "http": ["api.github.com/repos/overextended"] },
+      "why": [
+        "dynamic_code: compiles its own modules with load() (init.lua, imports/require/shared.lua, resource/init.lua)",
+        "http: lib.versionCheck asks api.github.com for the latest release of each Overextended resource"
+      ],
+      "youProvide": ["the destination of lib.logger (Datadog, Fivemanage, Loki, Graylog), only if you enabled it"],
+      "alsoSeen": [
+        "ExecuteCommand (add_ace, add_principal) in the acl module: logged by torii, not restricted",
+        "SaveResourceFile writes created_zones.lua inside its own folder"
+      ]
+    },
+    {
+      "id": "ox_inventory",
+      "resources": ["ox_inventory"],
+      "origin": "https://github.com/overextended/ox_inventory",
+      "originHint": "github.com/overextended/ox_inventory",
+      "checked": {
+        "commit": "488aa6d",
+        "date": "2026-10-03",
+        "scope": "every tracked .lua file",
+        "lookedFor": ["PerformHttpRequest", "load", "loadstring", "SaveResourceFile", "SetHttpHandler", "ExecuteCommand"]
+      },
+      "grants": { "dynamic_code": true, "http": [] },
+      "why": [
+        "dynamic_code: loads its data files and imports with load() (init.lua, server.lua)"
+      ],
+      "youProvide": ["the exact path of your Discord webhook (discord.com/api/webhooks/<id>), only if you set the inventory:webhook convar"],
+      "alsoSeen": ["SaveResourceFile rewrites data/items.lua inside its own folder (torii logs writes to code files)"]
+    },
+    {
+      "id": "ox_target",
+      "resources": ["ox_target"],
+      "origin": "https://github.com/overextended/ox_target",
+      "originHint": "github.com/overextended/ox_target",
+      "checked": {
+        "commit": "bf03d52",
+        "date": "2026-06-09",
+        "scope": "every tracked .lua file",
+        "lookedFor": ["PerformHttpRequest", "load", "loadstring", "SaveResourceFile", "SetHttpHandler", "ExecuteCommand"]
+      },
+      "grants": { "dynamic_code": false, "http": [] },
+      "why": ["no HTTP and no load() found in the server files"],
+      "youProvide": [],
+      "alsoSeen": ["ExecuteCommand appears in client code only"]
+    },
+    {
+      "id": "es_extended",
+      "resources": ["es_extended"],
+      "origin": "https://github.com/esx-framework/esx_core",
+      "originHint": "provides the functionalities for all other resources",
+      "checked": {
+        "commit": "fe59ca0",
+        "date": "2026-09-07",
+        "scope": "every tracked .lua file of the esx_core repository",
+        "lookedFor": ["PerformHttpRequest", "load", "loadstring", "SaveResourceFile", "SetHttpHandler", "ExecuteCommand"]
+      },
+      "grants": { "dynamic_code": true, "http": [] },
+      "why": ["dynamic_code: loads locale files and its own modules with load() (imports.lua, locale.lua)"],
+      "youProvide": ["the exact path of each Discord webhook listed in your Config.DiscordLogs, only if you use them"],
+      "alsoSeen": ["ExecuteCommand (add_ace, add_principal) for groups and permissions: logged, not restricted"]
+    },
+    {
+      "id": "esx_lib",
+      "resources": ["esx_lib"],
+      "origin": "https://github.com/esx-framework/esx_core",
+      "originHint": "esx team",
+      "checked": {
+        "commit": "fe59ca0",
+        "date": "2026-09-07",
+        "scope": "every tracked .lua file of the esx_core repository",
+        "lookedFor": ["PerformHttpRequest", "load", "loadstring", "SaveResourceFile", "SetHttpHandler", "ExecuteCommand"]
+      },
+      "grants": { "dynamic_code": true, "http": [] },
+      "why": ["dynamic_code: compiles its modules with load() (imports.lua, imports/require/shared.lua, resource/init.lua)"],
+      "youProvide": [],
+      "alsoSeen": []
+    },
+    {
+      "id": "qb-core",
+      "resources": ["qb-core"],
+      "origin": "https://github.com/qbcore-framework/qb-core",
+      "originHint": "kakarot",
+      "checked": {
+        "commit": "9b3cddc",
+        "date": "2026-08-24",
+        "scope": "every tracked .lua file",
+        "lookedFor": ["PerformHttpRequest", "load", "loadstring", "SaveResourceFile", "SetHttpHandler", "ExecuteCommand"]
+      },
+      "grants": { "dynamic_code": false, "http": [] },
+      "why": ["no HTTP and no load() found in the core files"],
+      "youProvide": [],
+      "alsoSeen": ["ExecuteCommand (add_ace, add_principal) for permissions: logged, not restricted"]
+    }
+  ],
+  "unsupportedRuntime": [
+    {
+      "id": "oxmysql",
+      "resources": ["oxmysql"],
+      "origin": "https://github.com/overextended/oxmysql",
+      "note": "Written in TypeScript and run by the JavaScript runtime, which torii does not inspect. No grant can be suggested. If you keep it, check that the release you installed comes from the repository above, then list it under \"exempt\" in the lockfile on purpose."
+    }
+  ]
+}
