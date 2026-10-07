@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/inari-suite/torii-fx/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/inari-suite/torii-fx/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/inari-suite-org/torii-fx/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/inari-suite-org/torii-fx/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-C8432A?style=flat-square&labelColor=121A1A">
   <img alt="Lua 5.4" src="https://img.shields.io/badge/Lua-5.4-121A1A?style=flat-square">
   <img alt="Tested on FXServer build 36897" src="https://img.shields.io/badge/FXServer-build%2036897-121A1A?style=flat-square">
