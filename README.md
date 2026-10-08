@@ -244,14 +244,15 @@ luacheck . && stylua --check torii spec  # lint and format
 npm test                                 # CLI tests, no dependencies
 ```
 
-## How it was built
+## How it is built
 
-torii is designed and directed by its maintainer, who decides what it does and what ships. A large part of the code
-was written with an AI assistant (Claude). We say so because a security tool should not ask you to guess.
+torii is designed and maintained by Inari Suite: the permission model, the threat model and every release decision
+are ours. Like many projects today, we use AI-assisted tools in our workflow.
 
-What you are asked to trust is not who typed the code but what can be checked: the test suites (`busted`,
-`npm test`), the checks on a real FXServer build ([docs/verification.md](docs/verification.md)), and a threat model
-that lists what torii cannot see. AI assistance does not replace that work, and every bypass report gets a test.
+A security tool should not ask for blind trust, so everything that matters can be checked: the test suites
+(`busted`, `npm test`), the experiments on a real FXServer build ([docs/verification.md](docs/verification.md)),
+differential testing of the URL parser against libcurl, and a threat model that lists what torii cannot see.
+Every bypass report gets a test.
 
 <p align="center">
   <br>
