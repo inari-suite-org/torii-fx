@@ -98,65 +98,62 @@ Read it as: *"the script `weather_sync` contacted `api.weather.example`; in enfo
 because you have not allowed it yet."* Nothing is blocked right now. Everything is also written to
 `resources/torii/logs/torii.jsonl`.
 
+You do not have to watch the console. At start, and at most once an hour, torii prints a summary such as
+`3 request(s) to review (1 suspicious). Type "torii review".` Type these in the txAdmin live console:
+
+| Command | What it shows |
+|---|---|
+| `torii` | how many requests wait for a decision, and whether enforce mode looks safe yet |
+| `torii review` | the numbered list, worst first: what each script tried, why it matters, what to do |
+| `torii explain 2` | request 2 in detail: how many times, since when, from which file and line |
+
+To see the messages in French, add `set torii_lang "fr"` to `server.cfg`.
+
 ## 6. Decide what each script may do
 
 1. Download `resources/torii/logs/torii.jsonl` from the server to your computer, for example into `C:\torii-work`.
 2. Run:
 
 ```bash
-node cli/torii.mjs approve "C:\torii-work\resources" --from-logs "C:\torii-work\torii.jsonl" --use-presets
+node cli/torii.mjs approve "C:\torii-work\resources" --from-logs "C:\torii-work\torii.jsonl" --use-presets --ask
 ```
 
-3. The tool prints what it **proposes** to allow, script by script. Nothing is saved yet.
+3. The tool starts with a **review**: every request gets a verdict and one sentence on what to do.
 
-```text
-+ weather_sync
-    + http              pastebin.com/raw
-    + http              api.weather.example/v1
-    ~ declaration_hash  - -> 0c3f78047594
+| Verdict | Meaning |
+|---|---|
+| 🟢 common | usual for this kind of script (a version check, a library checked against its source). Not asked. |
+| 🟠 check | torii cannot tell: an unknown site, a Discord webhook. Read the advice, then answer `y` to allow or press Enter to refuse. |
+| 🔴 suspicious | what backdoors do: a raw IP address, a name imitating a known site, a paste site, code run from memory. Refused unless you type `yes` in full. |
 
-! weather_sync
-    pastebin.com serves or receives user content: anybody can host a payload there, a path prefix does not make it safe; drop it if you can
-```
-
-The `~ declaration_hash` line is bookkeeping, you can ignore it. The block starting with `!` lists the tool's
-warnings: read every one.
-
-Go through each `+ http` line and ask yourself:
-
-| Question | If yes | If no |
-|---|---|---|
-| Is the address only numbers (`45.133.1.20`)? | **Do not allow.** Real services use names. | next question |
-| Does the name imitate a known site (`discordd.app`, `githubb.com`, odd letters)? | **Do not allow.** | next question |
-| Is it a site where anyone can post text (`pastebin.com`, `hastebin`, raw GitHub files)? | **Do not allow** unless the script's author explains why. Backdoors download their code from there. | next question |
-| Is it a Discord webhook (`discord.com/api/webhooks/...`)? | Allow it **only if it is yours**: in Discord, *Server Settings > Integrations > Webhooks*, the number in the address must match one of your webhooks. A backdoor sends your server's secrets to the attacker's webhook. | next question |
-| Is the site mentioned in the script's documentation, or obviously linked to what the script does (weather script → weather site)? | Allow. | **Ask the author** before allowing. Until then, leave it out. |
-
-For `dynamic_code` lines (the script wants to run code it builds or downloads): scripts that use `ox_lib` need it,
-which `--use-presets` handles for the library itself. A script you do not know that asks for `dynamic_code` **and**
-contacts an unknown site is the exact shape of a backdoor: do not allow it, and remove the script.
-
-4. When the proposal is right, run the same command again with `--write` at the end. If you decided to leave
-   something out, you can instead edit `C:\torii-work\resources\torii\policy.lock.json` by hand afterwards and delete
-   that line.
-5. Upload `C:\torii-work\resources\torii\policy.lock.json` to `resources/torii/` on the server.
+4. When torii asks `allow? [y/N]`, use the advice on screen. In short:
+   - a Discord webhook: allow it **only if it is yours** (Discord, *Server Settings > Integrations > Webhooks*, the
+     number must match one of yours). A backdoor sends your server's secrets to the attacker's webhook;
+   - a site mentioned in the script's documentation, or obviously linked to what it does (weather script, weather
+     site): allow;
+   - anything else: **ask the script's author** first. Pressing Enter refuses it for now; you can approve it later.
+   - a script you do not know that runs code from memory **and** contacts a site torii cannot vouch for is the exact
+     shape of a backdoor: refuse, and remove the script.
+5. torii shows what it will write and asks for a last confirmation. Answer `y`.
+6. Upload `C:\torii-work\resources\torii\policy.lock.json` to `resources/torii/` on the server.
 
 ## 7. JavaScript and C# scripts
 
 torii cannot look inside them. In enforce mode it **refuses to start** them, unless you list them as exempt. Common
-ones are `oxmysql`, `pma-voice` and `screenshot-basic`.
+ones are `oxmysql`, `pma-voice` and `screenshot-basic`. To see which ones you have:
 
-Open `policy.lock.json` and add their names to `exempt`:
+```bash
+node cli/torii.mjs exempt "C:\torii-work\resources"
+```
 
-```json
-{
-  "version": 1,
-  "exempt": ["oxmysql", "pma-voice"],
-  "resources": { ... }
-}
+To exempt one (then upload `policy.lock.json` again):
+
+```bash
+node cli/torii.mjs exempt "C:\torii-work\resources" oxmysql --write
 ```
 
 Exempt means "torii does not check this script at all". Only exempt scripts you trust, from their official source.
+`--remove` takes a name off the list again.
 
 ## 8. Switch to enforce mode
 
