@@ -37,7 +37,7 @@ test('every preset has the evidence fields and plausible permissions', () => {
     assert.match(preset.checked.commit, /^[0-9a-f]{7,40}$/, preset.id);
     assert.match(preset.checked.date, /^\d{4}-\d{2}-\d{2}$/, preset.id);
     assert.ok(preset.checked.lookedFor.includes('PerformHttpRequest'), preset.id);
-    assert.equal(typeof preset.grants.dynamic_code, 'boolean', preset.id);
+    assert.ok([true, false, 'files'].includes(preset.grants.dynamic_code), preset.id);
     assert.ok(Array.isArray(preset.grants.http), preset.id);
     assert.ok(preset.why.length > 0, preset.id);
     for (const entry of preset.grants.http) {
@@ -111,7 +111,7 @@ test('approve prints known libraries, writes nothing for them by default, and ap
     assert.equal(applied.code, 0);
     assert.match(applied.out, /\+ ox_lib/);
     const lock = readLock(lockPath);
-    assert.equal(lock.resources.ox_lib.dynamic_code, true);
+    assert.equal(lock.resources.ox_lib.dynamic_code, 'files', 'measured: ox_lib only loads its own files');
     assert.ok(lock.resources.ox_lib.http.includes('api.github.com/repos/overextended/ox_lib/releases/latest'));
     assert.ok(lock.resources.ox_lib.http.every((entry) => entry.endsWith('/releases/latest')), 'only the read-only version check');
     assert.equal(lock.resources.oxmysql, undefined, 'unsupported runtimes never get a grant');

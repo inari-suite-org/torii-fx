@@ -3,10 +3,10 @@
 All notable changes to torii. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [semantic versioning](https://semver.org/).
 
-## Unreleased — v0.2
+## [0.2.0] — 2026-10-08
 
-Waits for a server with real players to run v0.1 in observe mode ([STATUS.md](STATUS.md)). Until then these changes
-stay on the `v0.2` branch.
+Still **experimental**: checked on a development server only ([STATUS.md](STATUS.md)). This is the version meant for
+the first servers that try torii in observe mode.
 
 ### Added
 
@@ -26,6 +26,8 @@ stay on the `v0.2` branch.
 
 ### Changed
 
+- The ox_lib and ox_target presets grant `torii_dynamic_code 'files'` instead of the full grant. Measured on a
+  development server: every text they load comes from their files, and they run without errors in enforce mode.
 - The step-by-step guide uses `approve --ask`, `torii exempt` and the console review.
 - The log keeps five path segments instead of three, and marks a path it cut with `<more>`. Found by the
   compatibility run: a GitHub version check was logged as `/repos/<owner>/<repo>`, so `approve --from-logs` proposed
@@ -52,4 +54,5 @@ First public release, **experimental**: tested on a development server only.
 - The ox_lib preset only grants the read-only release-check paths, not the whole `api.github.com/repos/overextended`
   prefix, which also accepts issues and comments.
 
-[0.1.0]: https://github.com/inari-suite-org/torii-fx/commits/main
+[0.2.0]: https://github.com/inari-suite-org/torii-fx/releases/tag/v0.2.0
+[0.1.0]: https://github.com/inari-suite-org/torii-fx/commit/2f56e94

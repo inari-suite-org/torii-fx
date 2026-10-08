@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 const PRESET_FILE = fileURLToPath(new URL('../presets/known-resources.json', import.meta.url));
 
-/** @typedef {{ dynamic_code: boolean, http: string[] }} PresetGrants */
+/** @typedef {{ dynamic_code: import('./dynamic.mjs').DynamicLevel, http: string[] }} PresetGrants */
 /** @typedef {{ id: string, resources: string[], origin: string, originHint: string|null, checked: object, grants: PresetGrants, why: string[], youProvide: string[], alsoSeen: string[] }} Preset */
 
 export function loadPresets(file = PRESET_FILE) {
@@ -53,7 +53,7 @@ export function describeMatch(match, applied) {
     `${match.resource}  (matches ${preset.origin.replace('https://', '')}, checked at ${preset.checked.commit} on ${preset.checked.date})`,
   ];
   const grants = [];
-  if (preset.grants.dynamic_code) grants.push('dynamic_code');
+  if (preset.grants.dynamic_code) grants.push(preset.grants.dynamic_code === 'files' ? "dynamic_code 'files'" : 'dynamic_code');
   for (const entry of preset.grants.http) grants.push(`http ${entry}`);
   lines.push(grants.length > 0 ? `    suggests   ${grants.join(', ')}` : '    suggests   no permission at all');
   for (const reason of preset.why) lines.push(`    why        ${reason}`);
