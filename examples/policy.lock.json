@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "exempt": [],
+  "resources": {
+    "weather_sync": {
+      "http": [
+        "api.weather.example",
+        "discord.com/api/webhooks/1234567890"
+      ],
+      "dynamic_code": false,
+      "follow_redirects": false
+    }
+  }
+}

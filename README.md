@@ -10,8 +10,14 @@
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-C8432A?style=flat-square&labelColor=121A1A">
   <img alt="Lua 5.4" src="https://img.shields.io/badge/Lua-5.4-121A1A?style=flat-square">
   <img alt="Tested on FXServer build 36897" src="https://img.shields.io/badge/FXServer-build%2036897-121A1A?style=flat-square">
-  <img alt="Status: alpha" src="https://img.shields.io/badge/status-alpha-C8432A?style=flat-square&labelColor=121A1A">
+  <img alt="Status: experimental" src="https://img.shields.io/badge/status-experimental-C8432A?style=flat-square&labelColor=121A1A">
 </p>
+
+> [!WARNING]
+> **Experimental.** torii has been tested on a development server only, with no players connected. It has not yet run
+> on a server with real players, so its behaviour under real traffic is unknown. Keep it in **observe mode** (the
+> default, which blocks nothing) and only switch to enforce mode after testing it with your own resources. Current
+> state: [STATUS.md](STATUS.md).
 
 torii gives every FiveM resource a short list of permissions, in the way Android and Deno do. It does not try to
 recognise a backdoor. A backdoor, however well it is obfuscated, still has to **call out to a host** and **run what
@@ -129,6 +135,8 @@ torii_dynamic_code 'yes'
 | `torii_dynamic_code 'yes'` | May run `load` on text (many libraries need it). Lua bytecode is never allowed. |
 | `torii_follow_redirects 'yes'` | Keep following HTTP redirects (off by default in enforce mode). |
 
+A complete, commented example is in [examples/](examples/README.md).
+
 Always refused, whatever the lockfile says: `localhost`, private, link-local and loopback ranges (every IPv4 spelling,
 IPv6, IPv4 hidden inside IPv6), `*.users.cfx.re`, single-label hosts, and URLs with user info, backslashes, odd
 percent-encoding or non-ASCII hosts. For local development only: `set torii_allow_private 1`.
@@ -169,6 +177,7 @@ command arguments.
   backdoor family is JavaScript. Pair torii with an OS-level egress firewall.
 - It does not see harm that needs no network and no `load` (hidden admin commands, economy exploits), nor data that
   leaves through client events or a trusted resource's exports.
+- Every bypass we considered and its outcome is in the [bypass table](docs/design.md#4-bypasses-considered).
 - It runs **inside the same Lua VM** as the code it guards. Every bypass we know of is closed and has a test
   (`InvokeNative`, native stubs, `debug.getupvalue`, bytecode, redirects, table metamethods), but it is not a hard sandbox.
 - An approved host that is itself malicious stays approved. `torii approve` warns about hosts where anyone can publish
@@ -206,14 +215,12 @@ its own events, which is why `approve` only proposes a diff and never writes wit
 
 - [x] Lua runtime: HTTP, dynamic code, `InvokeNative`, upvalue hardening, manifest gate
 - [x] Observe and enforce modes, lockfile with declaration hashes, JSON-lines log
-- [x] CLI: `install`, `uninstall`, `status`, `approve --from-logs`
-- [ ] Published npm package, recorded demo video
-- [x] Presets for common libraries (ox_lib, ox_inventory, es_extended, qb-core), opt-in with `--use-presets`
-- [ ] Export and event filtering between resources
-- [ ] Webhook alerts, txAdmin integration
-- [ ] A JavaScript runtime shim (a separate effort: Node has many more sinks)
+- [x] CLI: `install`, `uninstall`, `status`, `approve --from-logs`, presets for common libraries
+- [ ] Compatibility run with ox_lib, a framework and popular scripts on a development server
+- [ ] A server with real players in observe mode (until then, torii stays experimental)
+- [ ] v0.2: `torii simulate`, `torii explain`, signals about suspicious hosts, `torii doctor`
 
-The reasoning behind the order is in [docs/roadmap.md](docs/roadmap.md).
+Details and order: [docs/roadmap.md](docs/roadmap.md). Current state: [STATUS.md](STATUS.md).
 
 ## Project
 
@@ -223,6 +230,7 @@ The reasoning behind the order is in [docs/roadmap.md](docs/roadmap.md).
 | [docs/design.md](docs/design.md) | how it works inside FXServer, what can be intercepted, and the choices made |
 | [docs/verification.md](docs/verification.md) | what was checked on a real server, and what is still open |
 | [docs/presets.md](docs/presets.md) | the suggestions for well-known libraries, and why they are opt-in |
+| [STATUS.md](STATUS.md) | where v0.1 stands against its release criteria |
 | [docs/roadmap.md](docs/roadmap.md) | what comes next and in which order |
 | [research/](research/README.md) | the resources used to check those claims, to run on your own build |
 | [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) | contributing, reporting a bypass |
