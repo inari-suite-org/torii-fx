@@ -71,6 +71,10 @@ flowchart LR
 
 ## Install in three steps
 
+> [!TIP]
+> New to this, or on a rented server with txAdmin and FTP only? Follow the
+> [step-by-step guide](docs/guide.md) ([en français](docs/guide-fr.md)).
+
 > Requirements: Node.js 18+ for the CLI, and a recent FXServer artifact (developed and tested on build **36897**).
 > Older builds are untested and may lack the cross-resource write protection torii relies on to protect its own files.
 
@@ -233,6 +237,7 @@ Details and order: [docs/roadmap.md](docs/roadmap.md). Current state: [STATUS.md
 
 | | |
 |---|---|
+| [docs/guide.md](docs/guide.md), [docs/guide-fr.md](docs/guide-fr.md) | step-by-step guide for server owners who are not developers |
 | [docs/threat-model.md](docs/threat-model.md) | what torii stops, reports, and cannot see |
 | [docs/design.md](docs/design.md) | how it works inside FXServer, what can be intercepted, and the choices made |
 | [docs/verification.md](docs/verification.md) | what was checked on a real server, and what is still open |
