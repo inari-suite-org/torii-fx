@@ -82,6 +82,16 @@ describe('policy.declaration_hash', function()
 			follow_redirects = false,
 		})
 		assert.are.equal('1529d180165a4ed687b671ddcf294eb70ddf5878b2ddda8e7edbe89e1951720d', hash)
+		local files = policy.declaration_hash({ http = { 'api.example.com' }, dynamic_code = 'files' })
+		assert.are.equal('6c575647fa655ef2f2a903baae7b8b9f7d4572ab82a3fb27fbeb21b9fb8590f4', files)
+	end)
+
+	it('tells the files level apart from the full grant and from none', function()
+		local function h(level)
+			return policy.declaration_hash({ http = {}, dynamic_code = level })
+		end
+		assert.are_not.equal(h('files'), h(true))
+		assert.are_not.equal(h('files'), h(false))
 	end)
 end)
 
@@ -161,6 +171,29 @@ describe('Policy:check_http', function()
 	end)
 end)
 
+describe("dynamic_code 'files'", function()
+	it('reads the level from the manifest and the lockfile', function()
+		local decl = policy.read_declaration(function(_, key)
+			return key == 'torii_dynamic_code' and 1 or 0
+		end, function()
+			return ' Files '
+		end, 'res')
+		assert.are.equal('files', decl.dynamic_code)
+		local p = policy.new(lock_with({ a = { dynamic_code = 'files' }, b = { dynamic_code = 'yes' } }))
+		assert.are.equal('files', p.resources.a.dynamic_code)
+		assert.is_false(p.resources.b.dynamic_code) -- the lockfile only knows true, 'files' and false
+	end)
+
+	it('allows only text that came from resource files', function()
+		local p = policy.new(lock_with({ lib_user = { dynamic_code = 'files' } }))
+		assert.is_true(p:check_dynamic_code('lib_user', true))
+		local allow, reason = p:check_dynamic_code('lib_user', false)
+		assert.is_false(allow)
+		assert.are.equal('text_not_from_resource_files', reason)
+		assert.is_false(p:check_dynamic_code('lib_user'))
+	end)
+end)
+
 describe('Policy:check_dynamic_code / follow_redirects / exempt', function()
 	local p = policy.new(lock_with({
 		granted = { dynamic_code = true, follow_redirects = true },
@@ -169,6 +202,7 @@ describe('Policy:check_dynamic_code / follow_redirects / exempt', function()
 
 	it('requires an explicit grant', function()
 		assert.is_true(p:check_dynamic_code('granted'))
+		assert.is_true(p:check_dynamic_code('granted', false))
 		assert.is_false(p:check_dynamic_code('plain'))
 		assert.is_false(p:check_dynamic_code('unknown'))
 	end)

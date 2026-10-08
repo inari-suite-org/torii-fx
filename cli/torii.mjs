@@ -10,6 +10,7 @@ import { proposalFromEvents, readEvents, riskWarning, targetToEntry } from './li
 import { hostSignals } from './lib/hosts.mjs';
 import { explainReason, FIXES } from './lib/reasons.mjs';
 import { simulate } from './lib/simulate.mjs';
+import { widerDynamic } from './lib/dynamic.mjs';
 import { normalizeEntry } from './lib/entries.mjs';
 import { isSafeResourceName } from './lib/names.mjs';
 import { appliesTo, describeMatch, loadPresets, matchPresets } from './lib/presets.mjs';
@@ -187,7 +188,7 @@ function approve(dir, flags, io) {
       additions[name] = {
         ...current,
         http: [...new Set([...current.http, ...add.http])],
-        dynamic_code: current.dynamic_code || add.dynamic_code,
+        dynamic_code: widerDynamic(current.dynamic_code, add.dynamic_code),
       };
     }
     for (const [name, list] of Object.entries(proposal.warnings)) for (const text of list) warn(name, text);
@@ -202,7 +203,7 @@ function approve(dir, flags, io) {
     if (applied) {
       const add = (additions[match.resource] ??= { http: [], dynamic_code: false, follow_redirects: false });
       add.http = [...new Set([...add.http, ...match.preset.grants.http])];
-      add.dynamic_code = add.dynamic_code || match.preset.grants.dynamic_code;
+      add.dynamic_code = widerDynamic(add.dynamic_code, match.preset.grants.dynamic_code);
     }
     presetLines.push(...describeMatch(match, applied), '');
   }
@@ -334,7 +335,8 @@ function explainCommand(dir, flags, io) {
           for (const signal of signals) io.out(`  careful  ${signal}\n`);
         }
       } else if (o.type === 'dynamic_code') {
-        io.out(`  lockfile "${o.resource}": { "dynamic_code": true }\n`);
+        const level = o.origin === 'files' ? '"files"' : 'true';
+        io.out(`  lockfile "${o.resource}": { "dynamic_code": ${level} }\n`);
       }
     }
     io.out('\n');

@@ -2,12 +2,13 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { lockDynamic, widerDynamic } from './dynamic.mjs';
 import { normalizeEntry } from './entries.mjs';
 import { isSafeResourceName } from './names.mjs';
 
 export const LOCK_VERSION = 1;
 
-/** @typedef {{ http: string[], dynamic_code: boolean, follow_redirects: boolean, declaration_hash?: string }} Grant */
+/** @typedef {{ http: string[], dynamic_code: import('./dynamic.mjs').DynamicLevel, follow_redirects: boolean, declaration_hash?: string }} Grant */
 /** @typedef {{ version: number, exempt: string[], resources: Record<string, Grant> }} Lock */
 
 /** @returns {Lock} */
@@ -26,7 +27,7 @@ export function readLock(file) {
     if (!isSafeResourceName(name)) continue;
     lock.resources[name] = {
       http: Array.isArray(item.http) ? item.http.filter((x) => typeof x === 'string') : [],
-      dynamic_code: item.dynamic_code === true,
+      dynamic_code: lockDynamic(item.dynamic_code),
       follow_redirects: item.follow_redirects === true,
       ...(typeof item.declaration_hash === 'string' ? { declaration_hash: item.declaration_hash } : {}),
     };
@@ -76,7 +77,7 @@ export function covers(broad, narrow) {
 /**
  * Applies proposed additions to a lock without ever removing an existing grant.
  * @param {Lock} lock
- * @param {Record<string, { http?: string[], dynamic_code?: boolean, follow_redirects?: boolean, declaration_hash?: string }>} additions
+ * @param {Record<string, { http?: string[], dynamic_code?: import('./dynamic.mjs').DynamicLevel, follow_redirects?: boolean, declaration_hash?: string }>} additions
  * @returns {Lock}
  */
 export function mergeAdditions(lock, additions) {
@@ -88,7 +89,7 @@ export function mergeAdditions(lock, additions) {
     // a new entry already covered by a broader one (same host, shorter path prefix) adds nothing but reading time;
     // existing grants are never removed
     current.http = union.filter((entry) => current.http.includes(entry) || !union.some((other) => other !== entry && covers(other, entry)));
-    current.dynamic_code = current.dynamic_code || add.dynamic_code === true;
+    current.dynamic_code = widerDynamic(current.dynamic_code, add.dynamic_code);
     current.follow_redirects = current.follow_redirects || add.follow_redirects === true;
     if (add.declaration_hash) current.declaration_hash = add.declaration_hash;
     next.resources[name] = current;
@@ -108,7 +109,10 @@ export function diffLocks(before, after) {
     const b = before.resources[name];
     const detail = [];
     for (const entry of a.http) if (!b?.http.includes(entry)) detail.push(`    + http              ${entry}`);
-    if (a.dynamic_code && !b?.dynamic_code) detail.push('    + dynamic_code      true   (resource may run load() on text)');
+    if (a.dynamic_code !== (b?.dynamic_code ?? false)) {
+      const text = a.dynamic_code === 'files' ? 'files  (load() only on text read from resource files)' : 'true   (resource may run load() on any text)';
+      detail.push(`    + dynamic_code      ${text}`);
+    }
     if (a.follow_redirects && !b?.follow_redirects) detail.push('    + follow_redirects  true   (redirects are followed again)');
     if (a.declaration_hash !== b?.declaration_hash) {
       detail.push(`    ~ declaration_hash  ${b?.declaration_hash?.slice(0, 12) ?? '-'} -> ${a.declaration_hash?.slice(0, 12) ?? '-'}`);

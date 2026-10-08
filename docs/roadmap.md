@@ -18,6 +18,7 @@ when users tell us what hurts.
 |---|---|---|
 | `torii simulate` | replay observe-mode logs against a candidate lockfile: what enforce mode would block, before switching | written and tested, kept out of v0.1 |
 | `torii explain` | why an event was blocked, and the exact lockfile line that would allow it | written and tested, kept out of v0.1 |
+| `torii_dynamic_code 'files'` | `load` only on text exactly as read from resource files: what ox_lib users need, without the blanket grant. Texts the resource wrote itself are excluded | written and tested, kept out of v0.1 |
 | Signals about hosts in `approve` | look-alike names (edit distance), punycode, raw IP addresses, random-looking labels. Measured: 1 false positive on 50 common legitimate hosts, 9 of 12 suspicious names caught | written and tested, kept out of v0.1 |
 | `torii doctor` | checks the artifact build, the `ensure` order, `add_filesystem_permission` and the lockfile | idea |
 | Reachability audit | walk every object a resource can reach and prove none of the original natives is among them, instead of closing known bypasses one by one | idea |
@@ -33,6 +34,5 @@ when users tell us what hurts.
 | A per-resource network permission inside FXServer | proposed upstream, it would close every Lua bypass at once and cover JavaScript and C#; torii would be its prototype |
 | Firewall rules generated from the lockfile | one source of truth for the in-VM layer and the operating system layer |
 | Export and event filtering between resources | closes the "confused deputy" gaps in the [threat model](threat-model.md) |
-| Provenance for `load` | allow `load` only on text read from the resource's own files, instead of a blanket grant |
 | Signed lockfile, wildcard hosts, artifact-level mode | each has a cost; only with tests and on demand |
 | JavaScript coverage | a separate project: Node has many more ways out than Lua |

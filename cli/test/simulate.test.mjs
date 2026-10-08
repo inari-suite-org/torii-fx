@@ -142,3 +142,45 @@ test('the simulate and explain commands work end to end on a log file', () => {
     rm(root);
   }
 });
+
+test("dynamic_code 'files': levels, merging, approve and simulate", async () => {
+  const { lockDynamic, manifestDynamic, widerDynamic } = await import('../lib/dynamic.mjs');
+  const { parseDeclaration } = await import('../lib/declaration.mjs');
+  const { mergeAdditions, diffLocks } = await import('../lib/lock.mjs');
+  const { proposalFromEvents } = await import('../lib/logs.mjs');
+
+  assert.equal(manifestDynamic(' Files '), 'files');
+  assert.equal(manifestDynamic('yes'), true);
+  assert.equal(manifestDynamic('no'), false);
+  assert.equal(lockDynamic('yes'), false);
+  assert.equal(parseDeclaration("torii_dynamic_code 'files'\n").dynamic_code, 'files');
+
+  // merging never narrows a grant
+  assert.equal(widerDynamic(false, 'files'), 'files');
+  assert.equal(widerDynamic(true, 'files'), true);
+  assert.equal(widerDynamic('files', true), true);
+  const empty = { version: 1, exempt: [], resources: {} };
+  const narrow = mergeAdditions(empty, { shop: { dynamic_code: 'files' } });
+  assert.equal(narrow.resources.shop.dynamic_code, 'files');
+  assert.equal(mergeAdditions(narrow, { shop: { dynamic_code: false } }).resources.shop.dynamic_code, 'files');
+  assert.ok(diffLocks(empty, narrow).some((line) => line.includes('dynamic_code      files')));
+
+  // approve --from-logs proposes the narrow level unless some text came from elsewhere
+  const event = (resource, origin) => ({ resource, type: 'dynamic_code', decision: 'would_deny', reason: 'dynamic_code_not_granted', target: 'x', origin });
+  const proposal = proposalFromEvents([event('shop', 'files'), event('loader', 'files'), event('loader', 'memory'), event('old', undefined)]);
+  assert.equal(proposal.additions.shop.dynamic_code, 'files');
+  assert.equal(proposal.additions.loader.dynamic_code, true);
+  assert.equal(proposal.additions.old.dynamic_code, true); // logs written before the origin field existed
+  assert.equal(proposal.warnings.shop, undefined);
+
+  // simulate: the files level allows file text and blocks the rest
+  const lock = { exempt: [], resources: { shop: { http: [], dynamic_code: 'files' } } };
+  const outcomes = simulate([event('shop', 'files'), event('shop', 'memory')], lock);
+  assert.deepEqual(
+    outcomes.map((o) => [o.verdict, o.reason]).sort(),
+    [
+      ['allowed', 'dynamic_code_not_granted'],
+      ['blocked', 'text_not_from_resource_files'],
+    ],
+  );
+});

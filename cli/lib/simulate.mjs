@@ -4,6 +4,7 @@
 // opaque segments replaced by <redacted>). So a path-prefix entry longer than what the log kept cannot always be
 // decided: those cases are reported as "cannot tell" instead of being guessed.
 
+import { dynamicAllows } from './dynamic.mjs';
 import { normalizeEntry } from './entries.mjs';
 import { isSafeResourceName } from './names.mjs';
 
@@ -68,7 +69,7 @@ export function judgeHttp(target, entries) {
 
 /**
  * @param {object[]} events parsed JSON-lines events
- * @param {{ resources: Record<string, { http: string[], dynamic_code: boolean }>, exempt: string[] }} lock
+ * @param {{ resources: Record<string, { http: string[], dynamic_code: import('./dynamic.mjs').DynamicLevel }>, exempt: string[] }} lock
  */
 export function simulate(events, lock) {
   const outcomes = new Map();
@@ -93,15 +94,17 @@ export function simulate(events, lock) {
       if (!grant) why = 'resource_not_in_lockfile';
       else if (verdict === 'blocked') why = 'not_in_allow_list';
     } else if (event.type === 'dynamic_code') {
-      verdict = grant?.dynamic_code ? 'allowed' : 'blocked';
-      why = grant ? 'dynamic_code_not_granted' : 'resource_not_in_lockfile';
+      verdict = dynamicAllows(grant?.dynamic_code, event.origin) ? 'allowed' : 'blocked';
+      if (!grant) why = 'resource_not_in_lockfile';
+      else if (verdict === 'blocked') why = grant.dynamic_code === 'files' ? 'text_not_from_resource_files' : 'dynamic_code_not_granted';
     } else {
       continue;
     }
-    const key = `${subject}\u0000${event.type}\u0000${event.target}\u0000${verdict}`;
+    const origin = event.type === 'dynamic_code' && event.origin === 'files' ? 'files' : undefined;
+    const key = `${subject}\u0000${event.type}\u0000${event.target}\u0000${verdict}\u0000${origin}`;
     const current = outcomes.get(key);
     if (current) current.count += 1;
-    else outcomes.set(key, { resource: subject, type: event.type, target: String(event.target ?? ''), reason: why, verdict, count: 1 });
+    else outcomes.set(key, { resource: subject, type: event.type, target: String(event.target ?? ''), reason: why, verdict, count: 1, ...(origin ? { origin } : {}) });
   }
   return [...outcomes.values()].sort((a, b) => a.resource.localeCompare(b.resource) || b.count - a.count);
 }

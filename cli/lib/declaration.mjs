@@ -3,10 +3,11 @@
 
 import { createHash } from 'node:crypto';
 import { lex } from './lua-lite.mjs';
+import { dynamicHashValue, manifestDynamic } from './dynamic.mjs';
 
 export const DECLARATION_VERSION = 'torii-decl-v1';
 
-/** @typedef {{ http: string[], dynamic_code: boolean, follow_redirects: boolean }} Declaration */
+/** @typedef {{ http: string[], dynamic_code: import('./dynamic.mjs').DynamicLevel, follow_redirects: boolean }} Declaration */
 
 /** @param {Partial<Declaration>} decl */
 export function declarationHash(decl) {
@@ -14,7 +15,7 @@ export function declarationHash(decl) {
   const lines = [
     DECLARATION_VERSION,
     ...entries.map((entry) => `http=${entry}`),
-    `dynamic_code=${decl.dynamic_code ? 'yes' : 'no'}`,
+    `dynamic_code=${dynamicHashValue(decl.dynamic_code)}`,
     `follow_redirects=${decl.follow_redirects ? 'yes' : 'no'}`,
   ];
   return createHash('sha256').update(lines.join('\n')).digest('hex');
@@ -57,7 +58,7 @@ export function parseDeclaration(manifestText) {
     http: directiveValues(text, 'torii_http', skeleton)
       .map((entry) => entry.trim())
       .filter(Boolean),
-    dynamic_code: truthy(directiveValues(text, 'torii_dynamic_code', skeleton)[0]),
+    dynamic_code: manifestDynamic(directiveValues(text, 'torii_dynamic_code', skeleton)[0]),
     follow_redirects: truthy(directiveValues(text, 'torii_follow_redirects', skeleton)[0]),
   };
 }

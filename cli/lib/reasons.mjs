@@ -16,6 +16,10 @@ export const REASONS = {
     why: 'The resource tried to run text as Lua with load(). Many libraries do this for their own files; a remote-code loader does it with downloaded text.',
     fix: 'grant',
   },
+  text_not_from_resource_files: {
+    why: 'The resource may only run text exactly as it read it from resource files (dynamic_code "files"), and this text was built or changed in memory, downloaded, or written by the resource itself.',
+    fix: 'grant',
+  },
   loopback_address: { why: `The request targets the machine itself. ${ADDRESS}`, fix: 'never' },
   private_address: { why: `The request targets a private network range. ${ADDRESS}`, fix: 'never' },
   link_local_address: { why: `The request targets a link-local address such as the cloud metadata service. ${ADDRESS}`, fix: 'never' },

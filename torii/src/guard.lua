@@ -36,7 +36,34 @@ M.WRAPPED_NAMES = {
 	GetConvar = true,
 	SetHttpHandler = true,
 	SaveResourceFile = true,
+	LoadResourceFile = true,
 }
+
+-- Budget for `torii_dynamic_code 'files'`: total bytes of file text a resource state remembers. Past it, new texts
+-- are not remembered and loading them counts as dynamic code from elsewhere (fails closed).
+local FILE_TEXTS_MAX_BYTES = 8 * 1024 * 1024
+local WRITTEN_MAX = 65536
+
+--- Fingerprint of a written text: length plus a hash of sampled bytes. It only ever denies (a collision can make a
+--- genuine file text untrusted, never the reverse), so it does not need to resist forgery, only to be cheap.
+local function fingerprint(text)
+	local n = #text
+	local h = n
+	local step = n > 256 and n // 256 or 1
+	for i = 1, n, step do
+		h = (h * 31 + byte(text, i)) % 4294967296
+	end
+	for i = n > 64 and n - 63 or 1, n do
+		h = (h * 31 + byte(text, i)) % 4294967296
+	end
+	return n .. ':' .. h
+end
+
+--- Data formats (JSON, XML, numbers) can never be a Lua chunk; not remembering them keeps memory small.
+local function may_be_code(text)
+	local first = match(text, '^%s*(.)')
+	return first ~= nil and not find('{[<0123456789', first, 1, true)
+end
 
 local SELF_SOURCE = debug.getinfo(1, 'S').source
 
@@ -120,6 +147,26 @@ function M.install(env)
 	local seen = {}
 	local seen_count = 0
 
+	-- Provenance for `torii_dynamic_code 'files'`: texts returned by LoadResourceFile, minus any text this
+	-- resource wrote itself with SaveResourceFile (otherwise write-then-read would launder any string).
+	local file_texts = {}
+	local file_texts_bytes = 0
+	local written = {}
+	local written_count = 0
+	local written_overflow = false -- also set once the resource writes through io, whose content is not seen here
+
+	local function remember_written(text)
+		if written_count >= WRITTEN_MAX then
+			written_overflow = true -- from now on no new file text is trusted
+			return
+		end
+		local key = fingerprint(text)
+		if not written[key] then
+			written[key] = true
+			written_count = written_count + 1
+		end
+	end
+
 	local function mode()
 		local ok, value = pcall(env.mode)
 		return (ok and value == 'enforce') and 'enforce' or 'observe'
@@ -153,6 +200,8 @@ function M.install(env)
 				.. tostring(event.target)
 				.. '|'
 				.. tostring(event.src)
+				.. '|'
+				.. tostring(event.origin)
 			local t = now()
 			if seen[key] and t - seen[key] < DEDUP_WINDOW_MS then
 				return
@@ -315,6 +364,13 @@ function M.install(env)
 
 	local function wrap_save_resource_file(orig)
 		return function(target_resource, file_name, ...)
+			local data, data_length = ...
+			if type(data) == 'string' then
+				remember_written(data)
+				if type(data_length) == 'number' and data_length >= 0 and data_length < #data then
+					remember_written(sub(data, 1, data_length))
+				end
+			end
 			if type(file_name) == 'string' then
 				local base = match(lower(file_name), '([^/\\]+)$') or ''
 				base = gsub(base, ':.*$', '') -- NTFS alternate data stream
@@ -347,6 +403,24 @@ function M.install(env)
 		end
 	end
 
+	local function wrap_load_resource_file(orig)
+		return function(...)
+			local text = orig(...)
+			if
+				type(text) == 'string'
+				and not file_texts[text]
+				and not written_overflow
+				and file_texts_bytes + #text <= FILE_TEXTS_MAX_BYTES
+				and may_be_code(text)
+				and not written[fingerprint(text)]
+			then
+				file_texts[text] = true
+				file_texts_bytes = file_texts_bytes + #text
+			end
+			return text
+		end
+	end
+
 	local WRAPPERS = {
 		PerformHttpRequestInternalEx = wrap_http_ex,
 		PerformHttpRequestInternal = wrap_http_json,
@@ -354,6 +428,7 @@ function M.install(env)
 		GetConvar = wrap_get_convar,
 		SetHttpHandler = wrap_set_http_handler,
 		SaveResourceFile = wrap_save_resource_file,
+		LoadResourceFile = wrap_load_resource_file,
 	}
 
 	local installed = {}
@@ -492,7 +567,8 @@ function M.install(env)
 			})
 			return nil, 'torii: binary chunks are not allowed'
 		end
-		local ok, allow, reason = pcall(policy.check_dynamic_code, policy, resource)
+		local from_files = type(chunk) == 'string' and file_texts[chunk] == true and not written[fingerprint(chunk)]
+		local ok, allow, reason = pcall(policy.check_dynamic_code, policy, resource, from_files)
 		if not ok then
 			allow, reason = false, 'internal_error'
 		end
@@ -504,6 +580,7 @@ function M.install(env)
 				decision = enforce and 'deny' or 'would_deny',
 				level = 'warn',
 				reason = reason,
+				origin = from_files and 'files' or 'memory',
 				target = type(chunkname) == 'string' and sub(chunkname, 1, 80) or 'chunk',
 			})
 			if enforce then
@@ -516,6 +593,22 @@ function M.install(env)
 		return orig_load(chunk, chunkname, 't')
 	end)
 	installed[#installed + 1] = 'load'
+
+	-- io.open -----------------------------------------------------------------------------------------
+	-- A resource may write its own files with io.open, then read them back with LoadResourceFile. The written content
+	-- is not visible here, so the first write ends trust in file texts read afterwards (texts read before stay valid).
+
+	local io_lib = rawget(G, 'io')
+	if type(io_lib) == 'table' and type(io_lib.open) == 'function' then
+		local orig_open = io_lib.open
+		io_lib.open = function(path, open_mode, ...)
+			if open_mode ~= nil and (type(open_mode) ~= 'string' or find(open_mode, '[wa+]')) then
+				written_overflow = true
+			end
+			return orig_open(path, open_mode, ...)
+		end
+		installed[#installed + 1] = 'io.open'
+	end
 
 	-- debug.getupvalue ---------------------------------------------------------------------------------
 	-- Without this, any function that captured the real InvokeNative (the scheduler, every native stub)

@@ -92,7 +92,7 @@ local function write_log(event)
 	end
 end
 
-local FIELDS = { 'type', 'api', 'decision', 'reason', 'target', 'src', 'level', 'mode' }
+local FIELDS = { 'type', 'api', 'decision', 'reason', 'target', 'src', 'level', 'mode', 'origin' }
 
 local function sanitize(event, resource)
 	local clean = { resource = resource, ts = os.date('!%Y-%m-%dT%H:%M:%SZ') }

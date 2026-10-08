@@ -2,6 +2,7 @@
 // proposal is only ever printed as a diff for the admin to review (see `torii approve`).
 
 import fs from 'node:fs';
+import { widerDynamic } from './dynamic.mjs';
 import { isSafeResourceName } from './names.mjs';
 
 /** Reasons that mean "torii refuses this whatever the lockfile says": never propose them. */
@@ -81,7 +82,7 @@ export function targetToEntry(target) {
 /**
  * Builds proposed grants from observe-mode events.
  * @param {object[]} events
- * @returns {{ additions: Record<string, { http: string[], dynamic_code: boolean }>, notes: string[] , warnings: Record<string, string[]> }}
+ * @returns {{ additions: Record<string, { http: string[], dynamic_code: import('./dynamic.mjs').DynamicLevel }>, notes: string[] , warnings: Record<string, string[]> }}
  */
 export function proposalFromEvents(events) {
   const additions = Object.create(null);
@@ -105,8 +106,12 @@ export function proposalFromEvents(events) {
       if (!grant.http.includes(converted.entry)) grant.http.push(converted.entry);
       for (const text of converted.warnings) warn(resource, text);
     } else if (event.type === 'dynamic_code' && (event.decision === 'would_deny' || event.decision === 'deny')) {
-      get(resource).dynamic_code = true;
-      warn(resource, 'dynamic_code lets this resource run any text as Lua (many libraries need it; a backdoor does too)');
+      // text read from resource files (module loaders such as ox_lib) only needs the narrow level; one load() of
+      // text from anywhere else needs the full grant
+      const level = event.origin === 'files' ? 'files' : true;
+      const grant = get(resource);
+      grant.dynamic_code = widerDynamic(grant.dynamic_code, level);
+      if (level === true) warn(resource, 'dynamic_code lets this resource run any text as Lua (some libraries need it; a backdoor does too)');
     } else if (event.type === 'bytecode') {
       notes.push(`${resource}: tried to load a binary chunk (never allowed, never proposed)`);
     }

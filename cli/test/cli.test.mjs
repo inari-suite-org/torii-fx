@@ -36,6 +36,7 @@ test('declaration hash matches the Lua implementation (shared vector)', () => {
     declarationHash({ http: ['discord.com/api/webhooks/123', 'api.example.com'], dynamic_code: true, follow_redirects: false }),
     '1529d180165a4ed687b671ddcf294eb70ddf5878b2ddda8e7edbe89e1951720d',
   );
+  assert.equal(declarationHash({ http: ['api.example.com'], dynamic_code: 'files' }), '6c575647fa655ef2f2a903baae7b8b9f7d4572ab82a3fb27fbeb21b9fb8590f4');
   assert.equal(
     declarationHash({ http: [' api.example.com ', 'discord.com/api/webhooks/123'], dynamic_code: true }),
     declarationHash({ http: ['discord.com/api/webhooks/123', 'api.example.com'], dynamic_code: true }),
