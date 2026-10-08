@@ -159,7 +159,11 @@ export function reviewAdditions(lock, additions, options = {}) {
     const dynamic =
       wanted === current
         ? null
-        : dynamicVerdict(wanted, { fromPreset: preset?.grants.dynamic_code ? preset.id : undefined, memoryLoads: memoryLoads.has(name) });
+        : dynamicVerdict(wanted, {
+            // a preset vouches only for the level it grants: 'files' says nothing about text loaded from memory
+            fromPreset: preset && widerDynamic(preset.grants.dynamic_code, wanted) === lockDynamic(preset.grants.dynamic_code) ? preset.id : undefined,
+            memoryLoads: memoryLoads.has(name),
+          });
     if (http.length === 0 && dynamic === null) continue;
 
     const leftOut = { http: [], dynamic: false };
@@ -168,7 +172,8 @@ export function reviewAdditions(lock, additions, options = {}) {
       add.http = add.http.filter((entry) => !leftOut.http.includes(entry));
       if (dynamic?.level === 'suspicious') {
         leftOut.dynamic = true;
-        add.dynamic_code = current;
+        // fall back to what is already granted, or to the narrower level a preset vouches for
+        add.dynamic_code = preset ? widerDynamic(current, preset.grants.dynamic_code) : current;
       }
     }
     const covered = http.flatMap((item) => {

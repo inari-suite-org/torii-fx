@@ -114,3 +114,25 @@ test('the common list only holds exact read-only destinations with a reason and 
     assert.ok(String(item.source ?? '').startsWith('https://'), `${item.entry} needs a source`);
   }
 });
+
+test('a preset vouches only for the level it grants', () => {
+  const lock = { resources: {} };
+  const presetGrants = { ox_target: { id: 'ox_target', grants: { dynamic_code: 'files', http: [] } } };
+
+  // what ox_target really does: text from its files only
+  const plain = { ox_target: { http: [], dynamic_code: 'files' } };
+  const calm = reviewAdditions(lock, plain, { presetGrants, common });
+  assert.equal(calm[0].dynamic.level, 'common');
+  assert.equal(plain.ox_target.dynamic_code, 'files');
+
+  // a resource called ox_target that also runs text from memory: not hidden behind the preset
+  const odd = { ox_target: { http: [], dynamic_code: true } };
+  const review = reviewAdditions(lock, odd, { presetGrants, memoryLoads: new Set(['ox_target']), common });
+  assert.equal(review[0].dynamic.level, 'suspicious');
+  assert.equal(odd.ox_target.dynamic_code, 'files', 'the full grant is left out, the vouched level stays');
+
+  // a preset that grants everything still covers the full level
+  const full = { lib: { http: [], dynamic_code: true } };
+  const fullReview = reviewAdditions(lock, full, { presetGrants: { lib: { id: 'lib', grants: { dynamic_code: true, http: [] } } }, common });
+  assert.equal(fullReview[0].dynamic.level, 'common');
+});
