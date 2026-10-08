@@ -14,7 +14,7 @@ local TOKEN = 'abcdefghijklmnopqrstuvwxyz0123456789'
 --- Builds a fake FiveM Lua state: natives that record their calls, a fake `debug` table and a report sink.
 local function make_env(opts)
 	opts = opts or {}
-	local state = { mode = opts.mode or 'enforce', calls = {}, events = {}, clock = 0 }
+	local state = { mode = opts.mode or 'enforce', calls = {}, events = {}, clock = 0, files = opts.files or {} }
 
 	local function record(name, ...)
 		state.calls[#state.calls + 1] = { name = name, args = table.pack(...) }
@@ -39,9 +39,15 @@ local function make_env(opts)
 		SetHttpHandler = function(handler)
 			record('set_http_handler', handler)
 		end,
-		SaveResourceFile = function(resource, file)
+		SaveResourceFile = function(resource, file, data, length)
 			record('save_resource_file', resource, file)
+			if type(data) == 'string' then
+				state.files[resource .. '/' .. file] = type(length) == 'number' and data:sub(1, length) or data
+			end
 			return true
+		end,
+		LoadResourceFile = function(resource, file)
+			return state.files[resource .. '/' .. file]
 		end,
 		Citizen = {
 			InvokeNative = function(hash, ...)
@@ -67,7 +73,7 @@ local function make_env(opts)
 			resources = {
 				res = {
 					http = { 'api.example.com/v1', 'discord.com/api/webhooks/123' },
-					dynamic_code = opts.dynamic_code == true,
+					dynamic_code = opts.dynamic_code == true or (opts.dynamic_code == 'files' and 'files') or false,
 					follow_redirects = opts.follow_redirects == true,
 				},
 			},
@@ -167,7 +173,7 @@ describe('guard: HTTP via the named native (what PerformHttpRequest ends up call
 			-1,
 			s.G.PerformHttpRequestInternalEx({ url = 'https://discord.com/api/webhooks/999/' .. TOKEN })
 		)
-		assert.are.equal('https://discord.com/api/webhooks/999', s.events[1].target)
+		assert.are.equal('https://discord.com/api/webhooks/999/<redacted>', s.events[1].target)
 		assert.is_nil(s.events[1].target:find(TOKEN, 1, true))
 	end)
 
@@ -335,6 +341,115 @@ describe('guard: Citizen.InvokeNative (the usual way around name-based hooks)', 
 		assert.are.equal(s.G.PerformHttpRequestInternalEx, s.G.Citizen.LoadNative('PerformHttpRequestInternalEx'))
 		s.G.Citizen.LoadNative('GetPlayerName')
 		assert.are.equal('load_native', s.last_call().name)
+	end)
+end)
+
+describe("guard: load with torii_dynamic_code 'files'", function()
+	local MODULE = 'return { answer = 42 }'
+
+	it('allows text exactly as read from a resource file', function()
+		local s = make_env({ dynamic_code = 'files', files = { ['ox_lib/imports/x.lua'] = MODULE } })
+		s.install()
+		local text = s.G.LoadResourceFile('ox_lib', 'imports/x.lua')
+		local fn = s.G.load(text, '@@ox_lib/imports/x.lua')
+		assert.are.equal(42, fn().answer)
+		assert.are.equal(0, #s.events)
+	end)
+
+	it('refuses text built in memory', function()
+		local s = make_env({ dynamic_code = 'files' })
+		s.install()
+		local fn, err = s.G.load('return 1')
+		assert.is_nil(fn)
+		assert.is_truthy(err:find('not permitted', 1, true))
+		assert.are.equal('text_not_from_resource_files', s.events[1].reason)
+	end)
+
+	it('refuses file text once modified, even slightly', function()
+		local s = make_env({ dynamic_code = 'files', files = { ['ox_lib/imports/x.lua'] = MODULE } })
+		s.install()
+		local text = s.G.LoadResourceFile('ox_lib', 'imports/x.lua')
+		assert.is_nil(s.G.load(text .. ' '))
+		assert.is_nil(s.G.load((text:gsub('42', '43'))))
+	end)
+
+	it('refuses text the resource wrote itself and read back (no laundering through a file)', function()
+		local s = make_env({ dynamic_code = 'files' })
+		s.install()
+		s.G.SaveResourceFile('res', 'cache.lua', 'return "payload"', -1)
+		local text = s.G.LoadResourceFile('res', 'cache.lua')
+		assert.are.equal('return "payload"', text)
+		assert.is_nil(s.G.load(text))
+		assert.are.equal('text_not_from_resource_files', s.events[#s.events].reason)
+	end)
+
+	it('stops trusting file texts read after the resource writes through io.open', function()
+		local s = make_env({
+			dynamic_code = 'files',
+			files = { ['res/before.lua'] = 'return 1', ['res/after.lua'] = 'return 2' },
+		})
+		local opened = {}
+		s.G.io = {
+			open = function(path, open_mode)
+				opened[#opened + 1] = { path, open_mode }
+				return 'handle'
+			end,
+		}
+		s.install()
+		local before = s.G.LoadResourceFile('res', 'before.lua')
+		assert.are.equal('handle', s.G.io.open('@res/notes.txt', 'r'))
+		s.G.io.open('@res/after.lua', 'w')
+		s.files['res/later.lua'] = 'return 3'
+		local later = s.G.LoadResourceFile('res', 'later.lua')
+		assert.are.equal(1, s.G.load(before)())
+		assert.is_nil(s.G.load(later))
+		assert.are.same({ '@res/after.lua', 'w' }, opened[2])
+	end)
+
+	it('also catches a write truncated by its length argument', function()
+		local s = make_env({ dynamic_code = 'files' })
+		s.install()
+		s.G.SaveResourceFile('res', 'cache.lua', 'return 7 -- padding', 8)
+		local text = s.G.LoadResourceFile('res', 'cache.lua')
+		assert.are.equal('return 7', text)
+		assert.is_nil(s.G.load(text))
+	end)
+
+	it('refuses file text that the resource wrote after reading it', function()
+		local s = make_env({ dynamic_code = 'files', files = { ['res/a.lua'] = MODULE } })
+		s.install()
+		local text = s.G.LoadResourceFile('res', 'a.lua')
+		s.G.SaveResourceFile('res', 'b.lua', MODULE, #MODULE)
+		assert.is_nil(s.G.load(text))
+	end)
+
+	it('does not remember data files (JSON), which can never be a chunk', function()
+		local s = make_env({ dynamic_code = 'files', files = { ['res/data.json'] = '{"a":1}' } })
+		s.install()
+		local text = s.G.LoadResourceFile('res', 'data.json')
+		assert.is_nil(s.G.load(text))
+	end)
+
+	it('still refuses bytecode read from a file', function()
+		local s = make_env({ dynamic_code = 'files', files = { ['res/b.luac'] = string.dump(function() end) } })
+		s.install()
+		local fn, err = s.G.load(s.G.LoadResourceFile('res', 'b.luac'))
+		assert.is_nil(fn)
+		assert.is_truthy(err:find('binary', 1, true))
+	end)
+
+	it('logs but loads in observe mode', function()
+		local s = make_env({ mode = 'observe', dynamic_code = 'files' })
+		s.install()
+		assert.are.equal(1, s.G.load('return 1')())
+		assert.are.equal('would_deny', s.events[1].decision)
+	end)
+
+	it('leaves a full grant unchanged', function()
+		local s = make_env({ dynamic_code = true })
+		s.install()
+		assert.are.equal(1, s.G.load('return 1')())
+		assert.are.equal(0, #s.events)
 	end)
 end)
 

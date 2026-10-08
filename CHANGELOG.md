@@ -3,6 +3,36 @@
 All notable changes to torii. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [semantic versioning](https://semver.org/).
 
+## [0.2.0] — 2026-10-08
+
+Still **experimental**: checked on a development server only ([STATUS.md](STATUS.md)). This is the version meant for
+the first servers that try torii in observe mode.
+
+### Added
+
+- `torii_dynamic_code 'files'`: `load` is allowed only on text exactly as `LoadResourceFile` returned it, which is what
+  ox_lib's module loader needs, instead of the blanket grant. Text the resource wrote itself (`SaveResourceFile`, or
+  anything read after an `io.open` write) is never trusted. The log records where each loaded text came from.
+- Plain-language verdicts in `torii approve`: every proposed item is marked common, check or suspicious, with one
+  sentence on what to do. Suspicious items are left out of `--write` unless `--include-suspicious`.
+- `torii approve --ask`: one question per item that is not common, and a confirmation before writing.
+- `torii exempt`: lists the JavaScript/C# resources torii cannot inspect, and exempts or un-exempts them.
+- Read-only console commands for the server console and the txAdmin live console: `torii`, `torii review`,
+  `torii explain <n>`. A summary at start and at most hourly, and a "ready for enforce" indicator.
+- English and French messages for the server owner (`set torii_lang "fr"`).
+- `torii simulate` (replay observe logs against a lockfile) and `torii explain` (why each event was blocked).
+- Experiment 11 (who can run a restricted console command) and a console-check script for a development server.
+- A differential test that checks `approve` and the console give every destination the same verdict.
+
+### Changed
+
+- The ox_lib and ox_target presets grant `torii_dynamic_code 'files'` instead of the full grant. Measured on a
+  development server: every text they load comes from their files, and they run without errors in enforce mode.
+- The step-by-step guide uses `approve --ask`, `torii exempt` and the console review.
+- The log keeps five path segments instead of three, and marks a path it cut with `<more>`. Found by the
+  compatibility run: a GitHub version check was logged as `/repos/<owner>/<repo>`, so `approve --from-logs` proposed
+  a prefix that also covers issues and comments. Now the exact `/releases/latest` path is proposed.
+
 ## [0.1.0] — 2026-10-08
 
 First public release, **experimental**: tested on a development server only.
@@ -24,4 +54,5 @@ First public release, **experimental**: tested on a development server only.
 - The ox_lib preset only grants the read-only release-check paths, not the whole `api.github.com/repos/overextended`
   prefix, which also accepts issues and comments.
 
-[0.1.0]: https://github.com/inari-suite-org/torii-fx/commits/main
+[0.2.0]: https://github.com/inari-suite-org/torii-fx/releases/tag/v0.2.0
+[0.1.0]: https://github.com/inari-suite-org/torii-fx/commit/2f56e94

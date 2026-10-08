@@ -36,6 +36,7 @@ test('declaration hash matches the Lua implementation (shared vector)', () => {
     declarationHash({ http: ['discord.com/api/webhooks/123', 'api.example.com'], dynamic_code: true, follow_redirects: false }),
     '1529d180165a4ed687b671ddcf294eb70ddf5878b2ddda8e7edbe89e1951720d',
   );
+  assert.equal(declarationHash({ http: ['api.example.com'], dynamic_code: 'files' }), '6c575647fa655ef2f2a903baae7b8b9f7d4572ab82a3fb27fbeb21b9fb8590f4');
   assert.equal(
     declarationHash({ http: [' api.example.com ', 'discord.com/api/webhooks/123'], dynamic_code: true }),
     declarationHash({ http: ['discord.com/api/webhooks/123', 'api.example.com'], dynamic_code: true }),
@@ -189,7 +190,10 @@ test('approve --from-logs prints a diff and only writes with --write', () => {
     assert.match(preview.out, /\+ http\s+api\.weather\.example\/v2/);
     assert.ok(!/\+ http\s+api\.weather\.example\/v2\/now/.test(preview.out), 'covered by api.weather.example/v2');
     assert.match(preview.out, /\+ dynamic_code/);
-    assert.match(preview.out, /user content/);
+    assert.match(preview.out, /🔴 suspicious {2}http pastebin\.com\n\s+why {3}pastebin\.com hosts content anybody can publish/);
+    assert.match(preview.out, /left out of the proposal/);
+    assert.match(preview.out, /download-and-run loader/, 'dynamic code plus an unknown host');
+    assert.ok(!/\+ http\s+pastebin\.com/.test(preview.out));
     assert.match(preview.out, /Nothing was written/);
     assert.ok(!fs.existsSync(lockPath));
 
@@ -197,6 +201,7 @@ test('approve --from-logs prints a diff and only writes with --write', () => {
     assert.equal(written.code, 0);
     const lock = readLock(lockPath);
     assert.ok(lock.resources.weather.http.includes('api.weather.example/v2'));
+    assert.ok(!lock.resources.weather.http.includes('pastebin.com'), 'suspicious entries are not written');
     assert.equal(lock.resources.weather.dynamic_code, true);
     assert.equal(lock.resources.weather.declaration_hash, declarationHash({ http: ['api.weather.example/v2'] }));
 
@@ -272,9 +277,9 @@ test('manifest declarations get the same risk warnings as logged targets', () =>
   try {
     writeResource(root, 'risky', "fx_version 'cerulean'\nserver_script 'a.lua'\ntorii_http 'pastebin.com/raw'\ntorii_http 'discord.com'\ntorii_http 'discord.com/api/webhooks/1'\n");
     const out = run(['approve', root, '--lock', path.join(root, 'lock.json')]).out;
-    assert.match(out, /pastebin\.com serves or receives user content/);
-    assert.match(out, /discord\.com accepts data from anyone/);
-    assert.equal(out.match(/discord\.com accepts data/g).length, 1, 'the scoped webhook entry does not warn');
+    assert.match(out, /🔴 suspicious {2}http pastebin\.com\/raw/);
+    assert.equal(out.match(/Discord without a webhook path/g).length, 1, 'only the unscoped entry gets this advice');
+    assert.equal(out.match(/a Discord webhook receives/g).length, 1);
   } finally {
     fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
@@ -331,4 +336,78 @@ test('approve does not propose entries already covered by a broader one, and nev
     { r: { http: ['a.example/deep'] } },
   );
   assert.deepEqual(kept.resources.r.http.sort(), ['a.example/deep', 'a.example/deep/path']);
+});
+
+test('exempt lists what torii cannot inspect and edits the exempt list only with --write', () => {
+  const root = tempDir();
+  try {
+    writeResource(root, 'oxmysql', "fx_version 'cerulean'\nserver_script 'dist/build.js'\n");
+    writeResource(root, 'shop', "fx_version 'cerulean'\nshared_script '@torii/init.lua'\nserver_script 'server.lua'\n");
+    const lockPath = path.join(root, 'lock.json');
+
+    const list = run(['exempt', root, '--lock', lockPath]);
+    assert.equal(list.code, 0);
+    assert.match(list.out, /oxmysql {2}\(expected origin: github\.com\/overextended\/oxmysql\)/);
+    assert.ok(!/shop/.test(list.out.split('Exempt only')[0].split('cannot inspect')[1]), 'a Lua resource is not a candidate');
+
+    const preview = run(['exempt', root, 'oxmysql', '--lock', lockPath]);
+    assert.match(preview.out, /\+ exempt {2}oxmysql/);
+    assert.match(preview.out, /will not check this script at all/);
+    assert.ok(!fs.existsSync(lockPath));
+
+    assert.equal(run(['exempt', root, 'oxmysql', '--lock', lockPath, '--write']).code, 0);
+    assert.deepEqual(readLock(lockPath).exempt, ['oxmysql']);
+    assert.match(run(['exempt', root, 'shop', '--lock', lockPath]).out, /a Lua resource: exempt only lets it start without the torii line/);
+    assert.match(run(['exempt', root, '--lock', lockPath]).out, /No JavaScript or C# resource left/);
+
+    assert.equal(run(['exempt', root, 'oxmysql', '--remove', '--lock', lockPath, '--write']).code, 0);
+    assert.deepEqual(readLock(lockPath).exempt, []);
+    assert.equal(run(['exempt', root, '../evil', '--lock', lockPath]).code, 1);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
+test('approve --ask asks about each item that is not common, then confirms before writing', () => {
+  const root = tempDir();
+  try {
+    writeResource(root, 'weather', "fx_version 'cerulean'\nshared_script '@torii/init.lua'\nserver_script 'server.lua'\n");
+    const log = path.join(root, 'torii.jsonl');
+    const event = (target) => JSON.stringify({ resource: 'weather', type: 'http', decision: 'would_deny', reason: 'resource_not_in_lockfile', target });
+    fs.writeFileSync(
+      log,
+      [event('https://api.weather.example/v1'), event('https://api.other.example/x'), event('https://45.133.1.20/p'), event('https://api.github.com/repos/overextended/ox_lib/releases/latest')].join('\n'),
+    );
+    const lockPath = path.join(root, 'lock.json');
+    const askRun = (answers) => {
+      let out = '';
+      const questions = [];
+      const code = main(['approve', root, '--from-logs', log, '--lock', lockPath, '--ask'], {
+        out: (s) => (out += s),
+        err: (s) => (out += s),
+        ask: (question) => {
+          questions.push(question);
+          return answers.shift() ?? '';
+        },
+      });
+      return { code, out, questions };
+    };
+
+    // y for the first unknown host, Enter for the second, "y" is not enough for the raw IP, then decline writing
+    const declined = askRun(['y', '', 'y', 'n']);
+    assert.equal(declined.code, 0);
+    assert.equal(declined.questions.length, 4, 'three items, then the confirmation; the common one is not asked');
+    assert.ok(declined.questions.some((q) => /45\.133\.1\.20\/p {2}allow\? \[type yes\]/.test(q)));
+    assert.ok(!fs.existsSync(lockPath), 'nothing written when the confirmation is declined');
+
+    const accepted = askRun(['y', '', 'yes', 'y']);
+    assert.match(accepted.out, /Written/);
+    const lock = readLock(lockPath);
+    assert.deepEqual(
+      [...lock.resources.weather.http].sort(),
+      ['45.133.1.20/p', 'api.github.com/repos/overextended/ox_lib/releases/latest', 'api.weather.example/v1'],
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
 });

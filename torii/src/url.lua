@@ -410,12 +410,18 @@ function M.normalize_path(path)
 	return '/' .. concat(out, '/')
 end
 
---- Replaces anything that looks like a secret (long opaque segments) and keeps at most 3 segments.
+--- How many path segments the log keeps. Five fit a GitHub release check (/repos/<owner>/<repo>/releases/latest),
+--- so `approve --from-logs` can propose that exact path instead of a prefix that also covers issues and comments.
+M.LOG_SEGMENTS = 5
+
+--- Replaces anything that looks like a secret (long opaque segments) and keeps at most LOG_SEGMENTS segments, then
+--- "<more>" when the path goes on, so that tools never mistake a cut path for a whole one.
 --- Used for log output: webhook tokens and API keys often live in the path.
 function M.redact_path(path)
 	local out = {}
 	for seg in string.gmatch(path, '[^/]+') do
-		if #out >= 3 then
+		if #out >= M.LOG_SEGMENTS then
+			out[#out + 1] = '<more>'
 			break
 		end
 		if #seg > 20 and match(seg, '^[%w%-_%.~%%]+$') then

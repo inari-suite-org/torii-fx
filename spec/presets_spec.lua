@@ -42,7 +42,9 @@ describe('known-library presets', function()
 		assert.is_false(p:check_http('ox_lib', 'https://api.github.com/users/overextended').allow)
 		-- the rest of the account accepts issues and comments: a way to post data out
 		assert.is_false(p:check_http('ox_lib', 'https://api.github.com/repos/overextended/ox_lib/issues').allow)
-		assert.is_true(p:check_dynamic_code('ox_lib'))
+		-- measured on a development server: ox_lib only loads text from its own files
+		assert.is_true(p:check_dynamic_code('ox_lib', true))
+		assert.is_false(p:check_dynamic_code('ox_lib', false))
 	end)
 
 	it('never suggest a bare shared host', function()

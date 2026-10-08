@@ -101,67 +101,65 @@ Lisez-la comme : *« le script `weather_sync` a contacté `api.weather.example` 
 parce que vous ne l'avez pas encore autorisé. »* Rien n'est bloqué pour l'instant. Tout est aussi écrit dans
 `resources/torii/logs/torii.jsonl`.
 
+Pas besoin de surveiller la console. Au démarrage, puis au plus une fois par heure, torii affiche un résumé comme
+`3 demande(s) à examiner (dont 1 suspecte(s)). Tapez "torii review".` Tapez ces commandes dans la console live de
+txAdmin :
+
+| Commande | Ce qu'elle affiche |
+|---|---|
+| `torii` | combien de demandes attendent une décision, et si le mode enforce semble sûr |
+| `torii review` | la liste numérotée, la plus grave d'abord : ce que chaque script a tenté, pourquoi c'est important, quoi faire |
+| `torii explain 2` | la demande 2 en détail : combien de fois, depuis quand, depuis quel fichier et quelle ligne |
+
+Pour les messages en français, ajoutez `set torii_lang "fr"` dans `server.cfg`.
+
 ## 6. Décidez de ce que chaque script a le droit de faire
 
 1. Téléchargez `resources/torii/logs/torii.jsonl` du serveur vers votre ordinateur, par exemple dans `C:\torii-work`.
 2. Lancez :
 
 ```bash
-node cli/torii.mjs approve "C:\torii-work\resources" --from-logs "C:\torii-work\torii.jsonl" --use-presets
+node cli/torii.mjs approve "C:\torii-work\resources" --from-logs "C:\torii-work\torii.jsonl" --use-presets --ask
 ```
 
-3. L'outil affiche ce qu'il **propose** d'autoriser, script par script. Rien n'est encore enregistré.
+3. L'outil commence par un **bilan** : chaque demande reçoit un verdict et une phrase qui dit quoi faire.
 
-```text
-+ weather_sync
-    + http              pastebin.com/raw
-    + http              api.weather.example/v1
-    ~ declaration_hash  - -> 0c3f78047594
+| Verdict | Signification |
+|---|---|
+| 🟢 common (courant) | habituel pour ce type de script (vérification de version, bibliothèque vérifiée à la source). Pas de question. |
+| 🟠 check (à vérifier) | torii ne peut pas trancher : site inconnu, webhook Discord. Lisez le conseil, puis répondez `y` pour autoriser ou appuyez sur Entrée pour refuser. |
+| 🔴 suspicious (suspect) | ce que font les backdoors : adresse IP brute, nom qui imite un site connu, site de dépôt de code, code exécuté depuis la mémoire. Refusé sauf si vous tapez `yes` en entier. |
 
-! weather_sync
-    pastebin.com serves or receives user content: anybody can host a payload there, a path prefix does not make it safe; drop it if you can
-```
-
-La ligne `~ declaration_hash` est de la comptabilité interne, vous pouvez l'ignorer. Le bloc qui commence par `!`
-liste les avertissements de l'outil : lisez-les tous.
-
-Pour chaque ligne `+ http`, posez-vous ces questions :
-
-| Question | Si oui | Si non |
-|---|---|---|
-| L'adresse n'est-elle faite que de chiffres (`45.133.1.20`) ? | **Ne pas autoriser.** Les vrais services utilisent des noms. | question suivante |
-| Le nom imite-t-il un site connu (`discordd.app`, `githubb.com`, lettres bizarres) ? | **Ne pas autoriser.** | question suivante |
-| Est-ce un site où n'importe qui peut publier du texte (`pastebin.com`, `hastebin`, fichiers bruts GitHub) ? | **Ne pas autoriser**, sauf si l'auteur du script explique pourquoi. Les backdoors téléchargent leur code depuis ces sites. | question suivante |
-| Est-ce un webhook Discord (`discord.com/api/webhooks/...`) ? | Autorisez-le **seulement s'il est à vous** : dans Discord, *Paramètres du serveur > Intégrations > Webhooks*, le numéro dans l'adresse doit correspondre à l'un de vos webhooks. Une backdoor envoie les secrets de votre serveur sur le webhook du pirate. | question suivante |
-| Le site est-il cité dans la documentation du script, ou a-t-il un lien évident avec ce que fait le script (script météo → site météo) ? | Autorisez. | **Demandez à l'auteur** avant d'autoriser. En attendant, laissez-le de côté. |
-
-Pour les lignes `dynamic_code` (le script veut exécuter du code qu'il construit ou télécharge) : les scripts qui
-utilisent `ox_lib` en ont besoin, et `--use-presets` s'en occupe pour la bibliothèque elle-même. Un script que vous ne
-connaissez pas qui demande `dynamic_code` **et** contacte un site inconnu a exactement la forme d'une backdoor : ne
-l'autorisez pas, et supprimez le script.
-
-4. Quand la proposition vous convient, relancez la même commande avec `--write` à la fin. Si vous avez décidé
-   d'écarter quelque chose, vous pouvez aussi modifier ensuite `C:\torii-work\resources\torii\policy.lock.json` à la
-   main et supprimer la ligne concernée.
-5. Envoyez `C:\torii-work\resources\torii\policy.lock.json` dans `resources/torii/` sur le serveur.
+4. Quand torii demande `allow? [y/N]`, suivez le conseil affiché. En bref :
+   - un webhook Discord : autorisez-le **seulement s'il est à vous** (Discord, *Paramètres du serveur > Intégrations >
+     Webhooks*, le numéro doit correspondre à l'un des vôtres). Une backdoor envoie les secrets de votre serveur sur
+     le webhook du pirate ;
+   - un site cité dans la documentation du script, ou qui a un lien évident avec ce qu'il fait (script météo, site
+     météo) : autorisez ;
+   - tout le reste : **demandez d'abord à l'auteur du script**. Entrée le refuse pour l'instant, vous pourrez
+     l'autoriser plus tard ;
+   - un script que vous ne connaissez pas qui exécute du code depuis la mémoire **et** contacte un site dont torii ne
+     peut pas se porter garant a exactement la forme d'une backdoor : refusez, et supprimez le script.
+5. torii affiche ce qu'il va écrire et demande une dernière confirmation. Répondez `y`.
+6. Envoyez `C:\torii-work\resources\torii\policy.lock.json` dans `resources/torii/` sur le serveur.
 
 ## 7. Les scripts en JavaScript et en C#
 
 torii ne peut pas regarder à l'intérieur. En mode enforce, il **refuse de les démarrer**, sauf si vous les déclarez
-exemptés. Les plus courants sont `oxmysql`, `pma-voice` et `screenshot-basic`.
+exemptés. Les plus courants sont `oxmysql`, `pma-voice` et `screenshot-basic`. Pour voir lesquels vous avez :
 
-Ouvrez `policy.lock.json` et ajoutez leurs noms dans `exempt` :
+```bash
+node cli/torii.mjs exempt "C:\torii-work\resources"
+```
 
-```json
-{
-  "version": 1,
-  "exempt": ["oxmysql", "pma-voice"],
-  "resources": { ... }
-}
+Pour en exempter un (puis renvoyez `policy.lock.json` sur le serveur) :
+
+```bash
+node cli/torii.mjs exempt "C:\torii-work\resources" oxmysql --write
 ```
 
 Exempté veut dire « torii ne vérifie pas du tout ce script ». N'exemptez que des scripts de confiance, récupérés à
-leur source officielle.
+leur source officielle. `--remove` retire un nom de la liste.
 
 ## 8. Passez en mode enforce
 

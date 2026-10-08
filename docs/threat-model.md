@@ -23,7 +23,7 @@ They do **not** control the server artifact, `server.cfg`, txAdmin, the host, or
 | Sending data to an unapproved host | same |
 | Reaching an approved host and being redirected elsewhere | redirects are not followed unless granted |
 | Reaching localhost, the cloud metadata address or private ranges | refused whatever the lockfile says |
-| Running text received by any channel (net event, HTTP handler, file, KVP) | `load` needs `dynamic_code`; others get `nil, message` |
+| Running text received by any channel (net event, HTTP handler, file, KVP) | `load` needs `dynamic_code`; others get `nil, message`. With the narrow `'files'` level, only text read unchanged from resource files runs, never text the resource wrote itself |
 | Running Lua bytecode | binary chunks refused in every mode |
 | Recovering the real natives through `debug.getupvalue` on system scripts or native stubs | refused for `@citizen:/...` and `@Name.lua` sources, and for torii's own functions |
 | Replacing a native by a fresh copy (`Citizen.LoadNative`) | returns the wrapper |

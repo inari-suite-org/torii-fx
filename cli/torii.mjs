@@ -6,10 +6,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { declarationHash, parseDeclaration } from './lib/declaration.mjs';
 import { diffLocks, mergeAdditions, readLock, writeLock } from './lib/lock.mjs';
-import { proposalFromEvents, readEvents, riskWarning } from './lib/logs.mjs';
+import { proposalFromEvents, readEvents, riskWarning, targetToEntry } from './lib/logs.mjs';
+import { hostSignals } from './lib/hosts.mjs';
+import { explainReason, FIXES } from './lib/reasons.mjs';
+import { simulate } from './lib/simulate.mjs';
+import { lockDynamic, widerDynamic } from './lib/dynamic.mjs';
 import { normalizeEntry } from './lib/entries.mjs';
 import { isSafeResourceName } from './lib/names.mjs';
 import { appliesTo, describeMatch, loadPresets, matchPresets } from './lib/presets.mjs';
+import { LABELS, reviewAdditions, reviewLines } from './lib/verdicts.mjs';
 import { findResources, inspectManifest, installInto, isEscrowed, uninstallFrom } from './lib/manifest.mjs';
 
 const HELP = `torii - runtime permission firewall for FiveM Lua resources
@@ -20,11 +25,24 @@ Usage:
   torii status    <resources-dir>                 which resources are protected, which run JS/C# torii cannot inspect
   torii approve   <resources-dir> [options]       propose lockfile changes as a diff (nothing is written without --write)
 
+  torii exempt    <resources-dir> [names] [--write] list the JavaScript/C# resources torii cannot inspect, or exempt them
+                                                  (--remove takes them off the list again)
+
+  torii simulate  <resources-dir> --from-logs <f> what enforce mode would block with the current lockfile
+  torii explain   <resources-dir> --from-logs <f> why each event was blocked, and what to do about it
+
 approve options:
   --from-logs <file>   build the proposal from observe-mode logs (torii/logs/torii.jsonl)
   --lock <file>        lockfile to read/write (default: <resources-dir>/torii/policy.lock.json)
   --use-presets        include the suggestions for well-known libraries (ox_lib, es_extended, ...) in the proposal
   --write              write the proposal to the lockfile (default: print the diff only)
+  --include-suspicious keep the items marked suspicious in the proposal (left out by default)
+  --ask                one question per item that is not common, then confirm before writing
+
+simulate / explain options:
+  --lock <file>        lockfile to test (default: <resources-dir>/torii/policy.lock.json)
+  --resource <name>    explain: only this resource
+  --fail-on-block      simulate: exit with code 2 if anything would still be blocked
 `;
 
 /** @param {string[]} argv */
@@ -35,7 +53,7 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg.startsWith('--')) {
       const key = arg.slice(2);
-      if (['from-logs', 'lock'].includes(key)) flags[key] = argv[(i += 1)];
+      if (['from-logs', 'lock', 'resource'].includes(key)) flags[key] = argv[(i += 1)];
       else flags[key] = true;
     } else {
       positional.push(arg);
@@ -125,6 +143,56 @@ function status(dir, io) {
   return 0;
 }
 
+const NL = '\n';
+
+/** One line from standard input, read synchronously (approve --ask). An empty answer at end of input. */
+function promptLine(question, out) {
+  out(question);
+  const byte = Buffer.alloc(1);
+  let line = '';
+  for (;;) {
+    let n;
+    try {
+      n = fs.readSync(0, byte, 0, 1, null);
+    } catch (error) {
+      if (error.code === 'EAGAIN') continue;
+      if (error.code === 'EOF') return line;
+      throw error;
+    }
+    if (n === 0) return line;
+    const ch = byte.toString('utf8');
+    if (ch === '\n') return line.replace(/\r$/, '');
+    line += ch;
+  }
+}
+
+const yes = (answer) => /^(y|yes|o|oui)$/i.test(String(answer ?? '').trim());
+const fullYes = (answer) => /^(yes|oui)$/i.test(String(answer ?? '').trim());
+
+/**
+ * approve --ask: one question per item that is not common. Enter means no. A suspicious item needs "yes" in full.
+ * Changes `additions` in place.
+ */
+function askDecisions(review, additions, lock, io) {
+  io.out(`Decide each item (Enter = no; a suspicious item needs "yes" in full).${NL}${NL}`);
+  for (const item of review) {
+    const add = additions[item.name];
+    for (const { entry, verdict } of item.http) {
+      if (verdict.level === 'common') continue;
+      const strict = verdict.level === 'suspicious';
+      const answer = io.ask(`${LABELS[verdict.level]}  ${item.name}  http ${entry}  allow? ${strict ? '[type yes] ' : '[y/N] '}`);
+      add.http = add.http.filter((other) => other !== entry);
+      if (strict ? fullYes(answer) : yes(answer)) add.http.push(entry);
+    }
+    if (item.dynamic && item.dynamic.level !== 'common') {
+      const strict = item.dynamic.level === 'suspicious';
+      const answer = io.ask(`${LABELS[item.dynamic.level]}  ${item.name}  dynamic_code  allow? ${strict ? '[type yes] ' : '[y/N] '}`);
+      add.dynamic_code = (strict ? fullYes(answer) : yes(answer)) ? item.wanted : lockDynamic(lock.resources[item.name]?.dynamic_code);
+    }
+  }
+  io.out(NL);
+}
+
 function approve(dir, flags, io) {
   const lockPath = flags.lock ?? path.join(dir, 'torii', 'policy.lock.json');
   const lock = readLock(lockPath);
@@ -164,6 +232,7 @@ function approve(dir, flags, io) {
 
   // 2. what the resource did in observe mode
   let notes = [];
+  let memoryLoads = new Set();
   if (flags['from-logs']) {
     if (!fs.existsSync(flags['from-logs'])) {
       io.err(`Log file not found: ${flags['from-logs']}\n`);
@@ -171,12 +240,13 @@ function approve(dir, flags, io) {
     }
     const proposal = proposalFromEvents(readEvents(flags['from-logs']));
     notes = proposal.notes;
+    memoryLoads = proposal.memoryLoads;
     for (const [name, add] of Object.entries(proposal.additions)) {
       const current = additions[name] ?? { http: [], dynamic_code: false, follow_redirects: false };
       additions[name] = {
         ...current,
         http: [...new Set([...current.http, ...add.http])],
-        dynamic_code: current.dynamic_code || add.dynamic_code,
+        dynamic_code: widerDynamic(current.dynamic_code, add.dynamic_code),
       };
     }
     for (const [name, list] of Object.entries(proposal.warnings)) for (const text of list) warn(name, text);
@@ -185,13 +255,15 @@ function approve(dir, flags, io) {
 
   // 3. well-known libraries: always described, applied to the proposal only with --use-presets
   const presetLines = [];
+  const presetGrants = Object.create(null);
   const found = matchPresets(scanned, loadPresets());
   for (const match of found.matches) {
     const applied = appliesTo(match, flags['use-presets'] === true);
     if (applied) {
+      presetGrants[match.resource] = match.preset;
       const add = (additions[match.resource] ??= { http: [], dynamic_code: false, follow_redirects: false });
       add.http = [...new Set([...add.http, ...match.preset.grants.http])];
-      add.dynamic_code = add.dynamic_code || match.preset.grants.dynamic_code;
+      add.dynamic_code = widerDynamic(add.dynamic_code, match.preset.grants.dynamic_code);
     }
     presetLines.push(...describeMatch(match, applied), '');
   }
@@ -199,7 +271,21 @@ function approve(dir, flags, io) {
     presetLines.push(`${item.resource}  (${item.entry.origin.replace('https://', '')})`, `    note       ${item.entry.note}`, '');
   }
 
-  // 4. hash of what each manifest declares today (resources unknown to the scan hash as "declares nothing")
+  // 4. a plain-language verdict for every new item; suspicious items stay out unless asked for
+  const review = reviewAdditions(lock, additions, { presetGrants, memoryLoads, keepSuspicious: flags['include-suspicious'] === true });
+  for (const item of review) {
+    // the verdict already says what these warnings say
+    if (warnings[item.name]) warnings[item.name] = warnings[item.name].filter((text) => !item.covered.some((part) => text.includes(part)));
+    if (warnings[item.name]?.length === 0) delete warnings[item.name];
+  }
+  if (flags.ask && review.length > 0) {
+    io.out('Review (read this first)' + NL + NL);
+    for (const line of reviewLines(review)) io.out(line + NL);
+    io.out(NL);
+    askDecisions(review, additions, lock, io);
+  }
+
+  // 5. hash of what each manifest declares today (resources unknown to the scan hash as "declares nothing")
   for (const name of Object.keys(additions)) {
     additions[name].declaration_hash = declarationHash(declarations[name] ?? { http: [] });
   }
@@ -217,6 +303,11 @@ function approve(dir, flags, io) {
     io.out('No changes to propose.\n');
     return 0;
   }
+  if (review.length > 0 && !flags.ask) {
+    io.out('Review (read this first)\n\n');
+    for (const line of reviewLines(review)) io.out(`${line}\n`);
+    io.out('\n');
+  }
   io.out(`Proposed changes to ${lockPath}\n\n`);
   for (const line of lines) io.out(`${line}\n`);
   for (const [name, list] of Object.entries(warnings)) {
@@ -231,11 +322,167 @@ function approve(dir, flags, io) {
     io.out('\nKnown libraries found:\n');
     for (const line of presetLines) io.out(`${line}\n`);
   }
-  if (flags.write) {
+  const write = flags.write || (flags.ask && lines.length > 0 && yes(io.ask(`\nWrite these changes to ${lockPath}? [y/N] `)));
+  if (write) {
     writeLock(lockPath, next);
     io.out(`\nWritten. Restart torii (or the resources) for the new lockfile to take effect.\n`);
   } else {
-    io.out('\nNothing was written. Review the diff, then re-run with --write.\n');
+    io.out(flags.ask ? '\nNothing was written.\n' : '\nNothing was written. Review the diff, then re-run with --write.\n');
+  }
+  return 0;
+}
+
+/**
+ * `torii exempt <dir> [names...]`: lists the JavaScript/C# resources torii cannot inspect, or adds names to the
+ * lockfile's "exempt" list (removes them with --remove). Like approve, nothing is written without --write.
+ */
+function exempt(dir, names, flags, io) {
+  const lockPath = flags.lock ?? path.join(dir, 'torii', 'policy.lock.json');
+  const lock = readLock(lockPath);
+  const resources = new Map(findResources(dir).map((r) => [r.name, r]));
+  const catalog = loadPresets();
+
+  if (names.length === 0) {
+    const candidates = [];
+    for (const [name, resource] of resources) {
+      const info = inspectManifest(fs.readFileSync(resource.manifestPath, 'utf8'));
+      if (info.hasServerCode && info.jsOrCsharp && !lock.exempt.includes(name)) candidates.push(name);
+    }
+    io.out(`Exempt now: ${lock.exempt.length > 0 ? lock.exempt.join(', ') : '(none)'}\n`);
+    if (candidates.length === 0) {
+      io.out('No JavaScript or C# resource left to decide about.\n');
+      return 0;
+    }
+    io.out('\nJavaScript/C# resources torii cannot inspect. In enforce mode they do not start unless exempt:\n');
+    for (const name of candidates.sort()) {
+      const known = catalog.unsupportedRuntime.find((entry) => entry.resources.includes(name));
+      io.out(`  ${name}${known ? `  (expected origin: ${known.origin.replace('https://', '')})` : ''}\n`);
+    }
+    io.out('\nExempt only scripts you trust, from their official source:\n');
+    io.out(`  torii exempt <resources-dir> ${candidates[0]} --write\n`);
+    return 0;
+  }
+
+  const remove = flags.remove === true;
+  const next = structuredClone(lock);
+  for (const name of names) {
+    if (!isSafeResourceName(name)) {
+      io.err(`Not a resource name: ${JSON.stringify(name.slice(0, 80))}\n`);
+      return 1;
+    }
+    if (remove) {
+      next.exempt = next.exempt.filter((item) => item !== name);
+      io.out(`- exempt  ${name}\n`);
+      continue;
+    }
+    if (next.exempt.includes(name)) {
+      io.out(`  exempt  ${name}  (already)\n`);
+      continue;
+    }
+    next.exempt.push(name);
+    io.out(`+ exempt  ${name}\n`);
+    const resource = resources.get(name);
+    if (!resource) {
+      io.out(`          not found in ${dir}: check the spelling\n`);
+      continue;
+    }
+    const info = inspectManifest(fs.readFileSync(resource.manifestPath, 'utf8'));
+    if (info.hasServerCode && !info.jsOrCsharp) {
+      io.out('          a Lua resource: exempt only lets it start without the torii line; if it has the line, its lockfile grants still apply\n');
+    } else {
+      io.out('          torii will not check this script at all: keep it only if it comes from its official source\n');
+    }
+    const known = catalog.unsupportedRuntime.find((entry) => entry.resources.includes(name));
+    if (known) io.out(`          expected origin: ${known.origin.replace('https://', '')}\n`);
+  }
+  if (flags.write) {
+    writeLock(lockPath, next);
+    io.out(`\nWritten to ${lockPath}. Restart torii for it to take effect.\n`);
+  } else {
+    io.out('\nNothing was written. Re-run with --write.\n');
+  }
+  return 0;
+}
+
+function loadEventsAndLock(dir, flags, io) {
+  if (!flags['from-logs']) {
+    io.err('Missing --from-logs <file> (the observe-mode log, torii/logs/torii.jsonl).\n');
+    return null;
+  }
+  if (!fs.existsSync(flags['from-logs'])) {
+    io.err(`Log file not found: ${flags['from-logs']}\n`);
+    return null;
+  }
+  const lockPath = flags.lock ?? path.join(dir, 'torii', 'policy.lock.json');
+  return { events: readEvents(flags['from-logs']), lock: readLock(lockPath), lockPath };
+}
+
+const show = (value) => JSON.stringify(String(value).slice(0, 160));
+
+function simulateCommand(dir, flags, io) {
+  const input = loadEventsAndLock(dir, flags, io);
+  if (!input) return 1;
+  const outcomes = simulate(input.events, input.lock);
+  const byResource = new Map();
+  for (const o of outcomes) {
+    const row = byResource.get(o.resource) ?? { blocked: 0, allowed: 0, unknown: 0 };
+    row[o.verdict] += o.count;
+    byResource.set(o.resource, row);
+  }
+  io.out(`Enforce mode with ${input.lockPath}, replayed against ${input.events.length} logged events\n\n`);
+  if (byResource.size === 0) {
+    io.out('Nothing in the log would be blocked or allowed differently.\n');
+    return 0;
+  }
+  io.out(`  ${'resource'.padEnd(28)} ${'blocked'.padStart(8)} ${'allowed'.padStart(8)} ${'cannot tell'.padStart(12)}\n`);
+  for (const [name, row] of byResource) {
+    io.out(`  ${name.slice(0, 28).padEnd(28)} ${String(row.blocked).padStart(8)} ${String(row.allowed).padStart(8)} ${String(row.unknown).padStart(12)}\n`);
+  }
+  const blocked = outcomes.filter((o) => o.verdict === 'blocked');
+  const unknown = outcomes.filter((o) => o.verdict === 'unknown');
+  if (blocked.length > 0) {
+    io.out('\nWould still be blocked:\n');
+    for (const o of blocked) io.out(`  ${o.resource}  ${o.type}  ${show(o.target)}  (${o.reason}, seen ${o.count}x)\n`);
+  }
+  if (unknown.length > 0) {
+    io.out('\nCannot tell (the log keeps only the start of the path, your entry is longer):\n');
+    for (const o of unknown) io.out(`  ${o.resource}  ${o.type}  ${show(o.target)}  (seen ${o.count}x)\n`);
+  }
+  io.out('\nRun `torii explain` on the same log for the reason behind each line and what to do about it.\n');
+  return flags['fail-on-block'] && blocked.length > 0 ? 2 : 0;
+}
+
+function explainCommand(dir, flags, io) {
+  const input = loadEventsAndLock(dir, flags, io);
+  if (!input) return 1;
+  const wanted = typeof flags.resource === 'string' ? flags.resource : null;
+  const outcomes = simulate(input.events, input.lock).filter((o) => !wanted || o.resource === wanted);
+  if (outcomes.length === 0) {
+    io.out(wanted ? `Nothing blocked for ${wanted} in this log.\n` : 'Nothing blocked in this log.\n');
+    return 0;
+  }
+  for (const o of outcomes) {
+    const { why, fix } = explainReason(o.reason);
+    const status = { blocked: 'blocked with the current lockfile', allowed: 'allowed by the current lockfile', unknown: 'cannot tell from the log (see `torii simulate`)' }[o.verdict];
+    io.out(`${o.resource}  ${o.type}  ${show(o.target)}  (seen ${o.count}x)\n`);
+    io.out(`  status   ${status}\n`);
+    io.out(`  why      ${why}\n`);
+    io.out(`  next     ${FIXES[fix] ?? FIXES.review}\n`);
+    if (fix === 'grant' && o.verdict !== 'allowed') {
+      if (o.type === 'http') {
+        const converted = targetToEntry(o.target);
+        if (converted) {
+          io.out(`  lockfile "${o.resource}": { "http": [${JSON.stringify(converted.entry)}] }\n`);
+          for (const text of converted.warnings) io.out(`  careful  ${text}\n`);
+          const signals = hostSignals(normalizeEntry(converted.entry).host ?? '');
+          for (const signal of signals) io.out(`  careful  ${signal}\n`);
+        }
+      } else if (o.type === 'dynamic_code') {
+        const level = o.origin === 'files' ? '"files"' : 'true';
+        io.out(`  lockfile "${o.resource}": { "dynamic_code": ${level} }\n`);
+      }
+    }
+    io.out('\n');
   }
   return 0;
 }
@@ -250,13 +497,14 @@ export function main(argv, rawIo = { out: (s) => process.stdout.write(s), err: (
   // control characters (ANSI escapes, backspace, carriage return...) but keep newlines and tabs.
   const clean = (text) => String(text).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/g, '?');
   const io = { out: (text) => rawIo.out(clean(text)), err: (text) => rawIo.err(clean(text)) };
+  io.ask = rawIo.ask ? (question) => (io.out(question), rawIo.ask(question)) : (question) => promptLine(question, io.out);
   const { positional, flags } = parseArgs(argv);
   const command = positional[0];
   if (!command || command === 'help' || flags.help) {
     io.out(HELP);
     return command ? 0 : 1;
   }
-  if (!['install', 'uninstall', 'status', 'approve'].includes(command)) {
+  if (!['install', 'uninstall', 'status', 'approve', 'simulate', 'explain', 'exempt'].includes(command)) {
     io.err(`Unknown command: ${command}\n\n${HELP}`);
     return 1;
   }
@@ -266,6 +514,9 @@ export function main(argv, rawIo = { out: (s) => process.stdout.write(s), err: (
     if (command === 'install') return install(dir, flags, io, false);
     if (command === 'uninstall') return install(dir, flags, io, true);
     if (command === 'status') return status(dir, io);
+    if (command === 'simulate') return simulateCommand(dir, flags, io);
+    if (command === 'explain') return explainCommand(dir, flags, io);
+    if (command === 'exempt') return exempt(dir, positional.slice(2), flags, io);
     return approve(dir, flags, io);
   } catch (error) {
     io.err(`torii: ${error.message}\n`);

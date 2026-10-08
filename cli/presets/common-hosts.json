@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "about": "What torii calls 'common' in `torii approve`. Common means usual for FiveM resources, not guaranteed safe. Never a whole host or a whole account: GitHub's API also accepts issues and comments, so a prefix such as api.github.com/repos/<owner> is a way out for data. Only exact read-only endpoints qualify. Every addition needs a reason and a source, by pull request.",
+  "releaseOwners": [
+    {
+      "owner": "overextended",
+      "why": "version check of an Overextended resource (ox_lib lib.versionCheck)",
+      "source": "https://github.com/overextended/ox_lib/blob/main/resource/version/server.lua"
+    },
+    {
+      "owner": "qbcore-framework",
+      "why": "version check of a QBCore framework resource against its official GitHub organisation",
+      "source": "https://github.com/qbcore-framework"
+    },
+    {
+      "owner": "esx-framework",
+      "why": "version check of an ESX framework resource against its official GitHub organisation",
+      "source": "https://github.com/esx-framework"
+    }
+  ],
+  "entries": []
+}

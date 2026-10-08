@@ -99,6 +99,24 @@ node cli/torii.mjs approve /path/to/resources --from-logs resources/torii/logs/t
 set torii_mode "enforce"
 ```
 
+`approve` starts with a review: each item is marked 🟢 common, 🟠 check or 🔴 suspicious, with what to do about it.
+Suspicious items (raw IP addresses, look-alike names, paste sites, code run from memory) are left out of `--write`
+unless you add `--include-suspicious`. Common means usual, not guaranteed safe. With `--ask`, approve asks about each
+item that is not common (a suspicious one needs `yes` typed in full) and confirms before writing, so you never edit the
+JSON by hand. `torii exempt <resources-dir>` lists the JavaScript/C# resources torii cannot inspect, and
+`torii exempt <resources-dir> oxmysql --write` exempts one on purpose.
+
+You can also follow it from the server console (the txAdmin live console works), without Node:
+
+```text
+torii                  what is waiting for a decision, and whether enforce mode looks safe yet
+torii review           numbered list of requests, worst first, with why and what to do
+torii explain <n>      how often, since when, from which file:line
+```
+
+These commands only read. Granting still goes through `torii approve` and the lockfile. Messages are in English or
+French: `set torii_lang "fr"`.
+
 For well-known libraries (ox_lib, es_extended, qb-core...), `--use-presets` adds what they legitimately need. It is
 opt-in and explained in [docs/presets.md](docs/presets.md).
 
@@ -136,7 +154,8 @@ torii_dynamic_code 'yes'
 |---|---|
 | `torii_http 'host'` | HTTPS to that host. Exact match, no wildcards. A port or `http://` must be written out. |
 | `torii_http 'host/path'` | Prefix match on segment boundaries: `/api/webhooks/123` covers `/api/webhooks/123/token`, not `/api/webhooks/1234`. |
-| `torii_dynamic_code 'yes'` | May run `load` on text (many libraries need it). Lua bytecode is never allowed. |
+| `torii_dynamic_code 'files'` | May run `load` only on text exactly as read from resource files with `LoadResourceFile` (what ox_lib's module loader does). Text built, changed or downloaded in memory is refused. |
+| `torii_dynamic_code 'yes'` | May run `load` on any text. Lua bytecode is never allowed, whatever the level. |
 | `torii_follow_redirects 'yes'` | Keep following HTTP redirects (off by default in enforce mode). |
 
 A complete, commented example is in [examples/](examples/README.md).
@@ -181,9 +200,10 @@ command arguments.
   backdoor family is JavaScript. Pair torii with an OS-level egress firewall.
 - It does not see harm that needs no network and no `load` (hidden admin commands, economy exploits), nor data that
   leaves through client events or a trusted resource's exports.
-- **`dynamic_code` is broad in practice.** Every resource that includes `@ox_lib/init.lua` (most modern scripts)
-  compiles ox_lib modules with `load`, so it needs `dynamic_code`, and a resource holding that grant can run any text
-  it receives. A narrower rule (allow `load` only on the resource's own files) is planned for v0.2.
+- **`dynamic_code 'files'` trusts what is on disk.** It refuses text the resource wrote itself (with
+  `SaveResourceFile`, or anything read after it wrote through `io.open`), but a resource that can get *another*
+  resource to save text it chose could still load that file. A file shipped with the resource is trusted: torii
+  guards what happens at runtime, it does not scan the code you installed.
 - Every bypass we considered and its outcome is in the [bypass table](docs/design.md#4-bypasses-considered).
 - It runs **inside the same Lua VM** as the code it guards. Every bypass we know of is closed and has a test
   (`InvokeNative`, native stubs, `debug.getupvalue`, bytecode, redirects, table metamethods), but it is not a hard sandbox.
@@ -202,8 +222,10 @@ per wrapped call. Capturing the call site (`file:line`) costs about 800 ns and o
 
 <details><summary>Does it break ox_lib and similar libraries?</summary>
 
-Libraries that compile code with `load` need `torii_dynamic_code`. In observe mode they show up in the log and
-`approve --from-logs` proposes the grant, with a warning you should read.
+Libraries that compile code with `load` need `torii_dynamic_code`. Most of them (ox_lib's module loader included)
+only compile files they read from disk, which the narrow `'files'` level allows. In observe mode the log records where
+each text came from, and `approve --from-logs` proposes `'files'` when every text came from files, the full grant
+(with a warning) otherwise.
 </details>
 
 <details><summary>Can a malicious resource just remove the torii line?</summary>
@@ -223,9 +245,11 @@ its own events, which is why `approve` only proposes a diff and never writes wit
 - [x] Lua runtime: HTTP, dynamic code, `InvokeNative`, upvalue hardening, manifest gate
 - [x] Observe and enforce modes, lockfile with declaration hashes, JSON-lines log
 - [x] CLI: `install`, `uninstall`, `status`, `approve --from-logs`, presets for common libraries
-- [ ] Compatibility run with ox_lib, a framework and popular scripts on a development server
+- [x] Compatibility run with ox_lib, QBCore and popular scripts on a development server (5 hours, see STATUS.md)
+- [x] v0.2: verdicts in plain language, `torii_dynamic_code 'files'`, console review in English and French,
+  `approve --ask`, `torii exempt`, `torii simulate`, `torii explain`
 - [ ] A server with real players in observe mode (until then, torii stays experimental)
-- [ ] v0.2: `torii simulate`, `torii explain`, signals about suspicious hosts, `torii doctor`
+- [ ] Console commands that change grants (`torii allow`, `torii mode`), `torii doctor`
 
 Details and order: [docs/roadmap.md](docs/roadmap.md). Current state: [STATUS.md](STATUS.md).
 

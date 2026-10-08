@@ -2,6 +2,7 @@
 // proposal is only ever printed as a diff for the admin to review (see `torii approve`).
 
 import fs from 'node:fs';
+import { widerDynamic } from './dynamic.mjs';
 import { isSafeResourceName } from './names.mjs';
 
 /** Reasons that mean "torii refuses this whatever the lockfile says": never propose them. */
@@ -67,10 +68,16 @@ export function targetToEntry(target) {
   const [, scheme, host, port = '', pathPart = '/'] = match;
   const warnings = [];
   let pathText = pathPart;
-  const redacted = pathText.split('/').findIndex((segment) => segment === '<redacted>');
-  if (redacted !== -1) {
-    pathText = `${pathText.split('/').slice(0, redacted).join('/') || '/'}`;
-    warnings.push(`a token-like path segment was removed from ${host}; check the prefix is specific enough`);
+  // the runtime replaces token-like segments with <redacted> and marks a path it cut with <more>
+  const segments = pathText.split('/');
+  const marker = segments.findIndex((segment) => segment === '<redacted>' || segment === '<more>');
+  if (marker !== -1) {
+    pathText = `${segments.slice(0, marker).join('/') || '/'}`;
+    warnings.push(
+      segments[marker] === '<redacted>'
+        ? `a token-like path segment was removed from ${host}; check the prefix is specific enough`
+        : `the log keeps only the start of this path on ${host}; the proposed prefix is broader than what the script asked for`,
+    );
   }
   const warning = riskWarning(host.toLowerCase(), pathText !== '/');
   if (warning) warnings.push(warning);
@@ -81,12 +88,13 @@ export function targetToEntry(target) {
 /**
  * Builds proposed grants from observe-mode events.
  * @param {object[]} events
- * @returns {{ additions: Record<string, { http: string[], dynamic_code: boolean }>, notes: string[] , warnings: Record<string, string[]> }}
+ * @returns {{ additions: Record<string, { http: string[], dynamic_code: import('./dynamic.mjs').DynamicLevel }>, notes: string[] , warnings: Record<string, string[]>, memoryLoads: Set<string> }}
  */
 export function proposalFromEvents(events) {
   const additions = Object.create(null);
   const warnings = Object.create(null);
   const notes = [];
+  const memoryLoads = new Set();
   const get = (name) => (additions[name] ??= { http: [], dynamic_code: false });
   const warn = (name, text) => ((warnings[name] ??= []).includes(text) ? 0 : warnings[name].push(text));
 
@@ -105,11 +113,16 @@ export function proposalFromEvents(events) {
       if (!grant.http.includes(converted.entry)) grant.http.push(converted.entry);
       for (const text of converted.warnings) warn(resource, text);
     } else if (event.type === 'dynamic_code' && (event.decision === 'would_deny' || event.decision === 'deny')) {
-      get(resource).dynamic_code = true;
-      warn(resource, 'dynamic_code lets this resource run any text as Lua (many libraries need it; a backdoor does too)');
+      // text read from resource files (module loaders such as ox_lib) only needs the narrow level; one load() of
+      // text from anywhere else needs the full grant
+      const level = event.origin === 'files' ? 'files' : true;
+      if (event.origin === 'memory') memoryLoads.add(resource);
+      const grant = get(resource);
+      grant.dynamic_code = widerDynamic(grant.dynamic_code, level);
+      if (level === true) warn(resource, 'dynamic_code lets this resource run any text as Lua (some libraries need it; a backdoor does too)');
     } else if (event.type === 'bytecode') {
       notes.push(`${resource}: tried to load a binary chunk (never allowed, never proposed)`);
     }
   }
-  return { additions, warnings, notes: [...new Set(notes)] };
+  return { additions, warnings, notes: [...new Set(notes)], memoryLoads };
 }

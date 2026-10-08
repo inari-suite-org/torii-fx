@@ -18,6 +18,11 @@ when users tell us what hurts.
 |---|---|---|
 | `torii simulate` | replay observe-mode logs against a candidate lockfile: what enforce mode would block, before switching | written and tested, kept out of v0.1 |
 | `torii explain` | why an event was blocked, and the exact lockfile line that would allow it | written and tested, kept out of v0.1 |
+| `torii_dynamic_code 'files'` | `load` only on text exactly as read from resource files: what ox_lib users need, without the blanket grant. Texts the resource wrote itself are excluded | written and tested, kept out of v0.1 |
+| Plain-language verdicts in `approve` | every proposed item is marked common, check or suspicious, with one sentence on what to do; suspicious items are left out of `--write` unless `--include-suspicious`. "Common" comes from audited presets and a short list of read-only destinations (`cli/presets/common-hosts.json`, additions by PR with a source) | written and tested, kept out of v0.1 |
+| `approve --ask` and `torii exempt` | decide item by item and exempt JavaScript resources without editing JSON by hand | written and tested, kept out of v0.1 |
+| Read-only console commands | `torii`, `torii review`, `torii explain <n>` in the server console (txAdmin live console): what is waiting for a decision with the same verdicts, a summary at start and at most hourly, a "ready for enforce" indicator (3 days, a weekend, nothing pending), English and French messages | written, tested, run on a development server |
+| Console commands that change something (`allow`, `deny`, `mode`) | without Node on the server. Experiment 11 settled how: "restricted" does not stop resources, so the handler must require `source == 0` and `GetInvokingResource() == nil` (txAdmin's own check) | design settled, not written |
 | Signals about hosts in `approve` | look-alike names (edit distance), punycode, raw IP addresses, random-looking labels. Measured: 1 false positive on 50 common legitimate hosts, 9 of 12 suspicious names caught | written and tested, kept out of v0.1 |
 | `torii doctor` | checks the artifact build, the `ensure` order, `add_filesystem_permission` and the lockfile | idea |
 | Reachability audit | walk every object a resource can reach and prove none of the original natives is among them, instead of closing known bypasses one by one | idea |
@@ -33,6 +38,5 @@ when users tell us what hurts.
 | A per-resource network permission inside FXServer | proposed upstream, it would close every Lua bypass at once and cover JavaScript and C#; torii would be its prototype |
 | Firewall rules generated from the lockfile | one source of truth for the in-VM layer and the operating system layer |
 | Export and event filtering between resources | closes the "confused deputy" gaps in the [threat model](threat-model.md) |
-| Provenance for `load` | allow `load` only on text read from the resource's own files, instead of a blanket grant |
 | Signed lockfile, wildcard hosts, artifact-level mode | each has a cost; only with tests and on demand |
 | JavaScript coverage | a separate project: Node has many more ways out than Lua |

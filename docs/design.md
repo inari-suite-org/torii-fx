@@ -124,7 +124,7 @@ Choices made:
 | Question | Decision | Why |
 |---|---|---|
 | Where do permissions live? | the manifest **asks**, an admin-owned lockfile **grants**, with the hash of the reviewed declaration | a hostile manifest can request its own command-and-control host; only the lockfile is trusted |
-| `load` policy | a per-resource grant `dynamic_code`; bytecode never | chunk names such as `@@ox_lib/...` can be reproduced by any code that calls `load`, so a name-based exception can be forged |
+| `load` policy | a per-resource grant `dynamic_code`: `'files'` (only text exactly as `LoadResourceFile` returned it, minus anything the resource wrote) or full; bytecode never | chunk names such as `@@ox_lib/...` can be reproduced by any code that calls `load`, so a name-based exception can be forged; the identity of the text itself cannot |
 | CLI language | Node.js with no dependencies | quick to test, no runtime beyond what server admins usually have |
 | Injection | a manifest line, plus a check at start | supported by Cfx, reversible, and fails visibly instead of silently |
 | HTTP redirects | not followed in enforce mode unless granted | `PerformHttpRequest` follows redirects across hosts by default, with no practical hop limit |

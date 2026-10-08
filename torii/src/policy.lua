@@ -34,8 +34,17 @@ end
 
 ---@class ToriiDeclaration
 ---@field http string[]
----@field dynamic_code boolean
+---@field dynamic_code boolean|'files'
 ---@field follow_redirects boolean
+
+--- 'files' (load only text read from resource files), true (any text) or false.
+local function dynamic_value(value)
+	if type(value) == 'string' and lower(trim(value)) == 'files' then
+		return 'files'
+	end
+	return truthy(value)
+end
+M.dynamic_value = dynamic_value
 
 --- Canonical hash of a declaration. The same algorithm lives in cli/lib/declaration.mjs.
 ---@param decl ToriiDeclaration
@@ -50,7 +59,8 @@ function M.declaration_hash(decl)
 	for _, entry in ipairs(entries) do
 		insert(lines, 'http=' .. entry)
 	end
-	insert(lines, 'dynamic_code=' .. (decl.dynamic_code and 'yes' or 'no'))
+	local dynamic = decl.dynamic_code == 'files' and 'files' or (decl.dynamic_code and 'yes' or 'no')
+	insert(lines, 'dynamic_code=' .. dynamic)
 	insert(lines, 'follow_redirects=' .. (decl.follow_redirects and 'yes' or 'no'))
 	return sha256.hex(concat(lines, '\n'))
 end
@@ -70,7 +80,7 @@ function M.read_declaration(count_fn, get_fn, resource)
 	end
 	return {
 		http = http,
-		dynamic_code = truthy(get_fn(resource, 'torii_dynamic_code', 0)),
+		dynamic_code = dynamic_value(get_fn(resource, 'torii_dynamic_code', 0)),
 		follow_redirects = truthy(get_fn(resource, 'torii_follow_redirects', 0)),
 	}
 end
@@ -161,7 +171,7 @@ function M.new(lock, opts)
 			end
 			self.resources[name] = {
 				http = http,
-				dynamic_code = item.dynamic_code == true,
+				dynamic_code = item.dynamic_code == true or (item.dynamic_code == 'files' and 'files') or false,
 				follow_redirects = item.follow_redirects == true,
 				declaration_hash = type(item.declaration_hash) == 'string' and item.declaration_hash or nil,
 			}
@@ -237,15 +247,23 @@ function Policy:check_http(resource, raw_url)
 end
 
 --- Dynamic code (`load` with text) permission.
+--- `from_files` tells whether the text is exactly what the resource read from resource files (see guard.lua).
 ---@param resource string
+---@param from_files boolean|nil
 ---@return boolean allow, string reason
-function Policy:check_dynamic_code(resource)
+function Policy:check_dynamic_code(resource, from_files)
 	local grants = self.resources[resource]
 	if not grants then
 		return false, 'resource_not_in_lockfile'
 	end
-	if grants.dynamic_code then
+	if grants.dynamic_code == true then
 		return true, 'allowed'
+	end
+	if grants.dynamic_code == 'files' then
+		if from_files then
+			return true, 'allowed'
+		end
+		return false, 'text_not_from_resource_files'
 	end
 	return false, 'dynamic_code_not_granted'
 end

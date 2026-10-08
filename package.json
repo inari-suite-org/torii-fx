@@ -1,6 +1,6 @@
 {
   "name": "torii-fx",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Runtime permission firewall for FiveM server-side Lua resources (CLI companion)",
   "type": "module",
   "license": "MIT",

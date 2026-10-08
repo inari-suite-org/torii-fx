@@ -194,10 +194,15 @@ describe('url.host_risk', function()
 end)
 
 describe('url.redact_path', function()
-	it('hides long opaque segments and keeps three segments at most', function()
+	it('hides long opaque segments, keeps five segments at most and marks a cut path', function()
 		local token = 'abcdefghijklmnopqrstuvwxyz0123456789'
 		assert.are.equal('/api/webhooks/<redacted>', url.redact_path('/api/webhooks/' .. token))
-		assert.are.equal('/api/webhooks/123', url.redact_path('/api/webhooks/123/' .. token))
+		assert.are.equal('/api/webhooks/123/<redacted>', url.redact_path('/api/webhooks/123/' .. token))
+		assert.are.equal(
+			'/repos/overextended/ox_lib/releases/latest',
+			url.redact_path('/repos/overextended/ox_lib/releases/latest')
+		)
+		assert.are.equal('/a/b/c/d/e/<more>', url.redact_path('/a/b/c/d/e/f/g'))
 		assert.are.equal('/', url.redact_path('/'))
 	end)
 end)
