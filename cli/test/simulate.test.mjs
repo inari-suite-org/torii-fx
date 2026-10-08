@@ -75,8 +75,7 @@ test('simulate counts what enforce mode would do with a lockfile', () => {
 test('a gate event forged by a resource is ignored', () => {
   const events = [
     { resource: 'evil', type: 'manifest_gate', decision: 'would_deny', reason: 'missing_torii_init_line', target: 'oxmysql' },
-    { resource: 'torii', type: 'manifest_gate', decision: 'would_deny', reason: 'missing_torii_init_line', target: 'bad name
-fake line' },
+    { resource: 'torii', type: 'manifest_gate', decision: 'would_deny', reason: 'missing_torii_init_line', target: 'bad name; fake line' },
     { resource: 'torii', type: 'manifest_gate', decision: 'would_deny', reason: 'missing_torii_init_line', target: 'real_one' },
   ];
   const outcomes = simulate(events, lock({}, ['oxmysql']));
