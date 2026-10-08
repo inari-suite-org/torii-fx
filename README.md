@@ -99,6 +99,10 @@ node cli/torii.mjs approve /path/to/resources --from-logs resources/torii/logs/t
 set torii_mode "enforce"
 ```
 
+`approve` starts with a review: each item is marked 🟢 common, 🟠 check or 🔴 suspicious, with what to do about it.
+Suspicious items (raw IP addresses, look-alike names, paste sites, code run from memory) are left out of `--write`
+unless you add `--include-suspicious`. Common means usual, not guaranteed safe.
+
 For well-known libraries (ox_lib, es_extended, qb-core...), `--use-presets` adds what they legitimately need. It is
 opt-in and explained in [docs/presets.md](docs/presets.md).
 

@@ -159,12 +159,15 @@ test('approve warns about declared hosts however they are spelled, and drops ent
     const lockPath = path.join(root, 'lock.json');
     const result = run(['approve', root, '--lock', lockPath]);
     assert.equal(result.code, 0);
-    assert.match(result.out, /pastebin\.com serves or receives user content/);
-    assert.match(result.out, /discord\.com accepts data from anyone/);
+    // every spelling is judged by its canonical host
+    assert.match(result.out, /🔴 suspicious {2}http pastebin\.com\/raw/);
+    assert.match(result.out, /🟠 check {2}http discord\.com\n\s+why {3}Discord without a webhook path/);
+    assert.match(result.out, /🟠 check {2}http discord\.com\/api\/webhooks\/123\n\s+why {3}a Discord webhook receives/);
     assert.match(result.out, /would be ignored by torii \(user info is not allowed\)/);
-    assert.match(result.out, /\+ http\s+pastebin\.com\/raw/);
+    assert.ok(!/\+ http\s+pastebin\.com\/raw/.test(result.out), 'a suspicious entry is left out of the proposal');
     assert.ok(!/\+ http\s+evil\.example/.test(result.out), 'an entry the runtime rejects is not proposed');
-    assert.equal((result.out.match(/discord\.com accepts data/g) ?? []).length, 1, 'the scoped webhook does not warn');
+    const kept = run(['approve', root, '--lock', lockPath, '--include-suspicious']);
+    assert.match(kept.out, /\+ http\s+pastebin\.com\/raw/);
   } finally {
     rm(root);
   }

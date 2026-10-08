@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "about": "Destinations torii calls 'common' in `torii approve`. Common means usual for FiveM resources, not guaranteed safe. Only read-only endpoints scoped to one well-known owner belong here: a service that stores or serves content for anybody (paste sites, webhooks, file hosts) never does, because a backdoor can use it too. Every addition needs a reason and a source, by pull request.",
+  "entries": [
+    {
+      "entry": "api.github.com/repos/overextended",
+      "why": "version check of Overextended resources (ox_lib lib.versionCheck)",
+      "source": "https://github.com/overextended/ox_lib/blob/main/resource/version/server.lua"
+    },
+    {
+      "entry": "api.github.com/repos/qbcore-framework",
+      "why": "version check of QBCore framework resources against their official GitHub organisation",
+      "source": "https://github.com/qbcore-framework"
+    },
+    {
+      "entry": "api.github.com/repos/esx-framework",
+      "why": "version check of ESX framework resources against their official GitHub organisation",
+      "source": "https://github.com/esx-framework"
+    }
+  ]
+}

@@ -14,6 +14,7 @@ import { widerDynamic } from './lib/dynamic.mjs';
 import { normalizeEntry } from './lib/entries.mjs';
 import { isSafeResourceName } from './lib/names.mjs';
 import { appliesTo, describeMatch, loadPresets, matchPresets } from './lib/presets.mjs';
+import { reviewAdditions, reviewLines } from './lib/verdicts.mjs';
 import { findResources, inspectManifest, installInto, isEscrowed, uninstallFrom } from './lib/manifest.mjs';
 
 const HELP = `torii - runtime permission firewall for FiveM Lua resources
@@ -32,6 +33,7 @@ approve options:
   --lock <file>        lockfile to read/write (default: <resources-dir>/torii/policy.lock.json)
   --use-presets        include the suggestions for well-known libraries (ox_lib, es_extended, ...) in the proposal
   --write              write the proposal to the lockfile (default: print the diff only)
+  --include-suspicious keep the items marked suspicious in the proposal (left out by default)
 
 simulate / explain options:
   --lock <file>        lockfile to test (default: <resources-dir>/torii/policy.lock.json)
@@ -176,6 +178,7 @@ function approve(dir, flags, io) {
 
   // 2. what the resource did in observe mode
   let notes = [];
+  let memoryLoads = new Set();
   if (flags['from-logs']) {
     if (!fs.existsSync(flags['from-logs'])) {
       io.err(`Log file not found: ${flags['from-logs']}\n`);
@@ -183,6 +186,7 @@ function approve(dir, flags, io) {
     }
     const proposal = proposalFromEvents(readEvents(flags['from-logs']));
     notes = proposal.notes;
+    memoryLoads = proposal.memoryLoads;
     for (const [name, add] of Object.entries(proposal.additions)) {
       const current = additions[name] ?? { http: [], dynamic_code: false, follow_redirects: false };
       additions[name] = {
@@ -197,10 +201,12 @@ function approve(dir, flags, io) {
 
   // 3. well-known libraries: always described, applied to the proposal only with --use-presets
   const presetLines = [];
+  const presetGrants = Object.create(null);
   const found = matchPresets(scanned, loadPresets());
   for (const match of found.matches) {
     const applied = appliesTo(match, flags['use-presets'] === true);
     if (applied) {
+      presetGrants[match.resource] = match.preset;
       const add = (additions[match.resource] ??= { http: [], dynamic_code: false, follow_redirects: false });
       add.http = [...new Set([...add.http, ...match.preset.grants.http])];
       add.dynamic_code = widerDynamic(add.dynamic_code, match.preset.grants.dynamic_code);
@@ -211,13 +217,12 @@ function approve(dir, flags, io) {
     presetLines.push(`${item.resource}  (${item.entry.origin.replace('https://', '')})`, `    note       ${item.entry.note}`, '');
   }
 
-  // 4. heuristic signals about every host about to be proposed (they order the reading, they decide nothing)
-  for (const [name, add] of Object.entries(additions)) {
-    for (const entry of add.http) {
-      const parsed = normalizeEntry(entry);
-      if (!parsed.ok) continue;
-      for (const signal of hostSignals(parsed.host)) warn(name, `look closer: ${signal}`);
-    }
+  // 4. a plain-language verdict for every new item; suspicious items stay out unless asked for
+  const review = reviewAdditions(lock, additions, { presetGrants, memoryLoads, keepSuspicious: flags['include-suspicious'] === true });
+  for (const item of review) {
+    // the verdict already says what these warnings say
+    if (warnings[item.name]) warnings[item.name] = warnings[item.name].filter((text) => !item.covered.some((part) => text.includes(part)));
+    if (warnings[item.name]?.length === 0) delete warnings[item.name];
   }
 
   // 5. hash of what each manifest declares today (resources unknown to the scan hash as "declares nothing")
@@ -237,6 +242,11 @@ function approve(dir, flags, io) {
   if (lines.length === 0 && Object.keys(warnings).length === 0 && notes.length === 0 && presetLines.length === 0) {
     io.out('No changes to propose.\n');
     return 0;
+  }
+  if (review.length > 0) {
+    io.out('Review (read this first)\n\n');
+    for (const line of reviewLines(review)) io.out(`${line}\n`);
+    io.out('\n');
   }
   io.out(`Proposed changes to ${lockPath}\n\n`);
   for (const line of lines) io.out(`${line}\n`);

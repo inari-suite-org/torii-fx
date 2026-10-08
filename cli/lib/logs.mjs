@@ -82,12 +82,13 @@ export function targetToEntry(target) {
 /**
  * Builds proposed grants from observe-mode events.
  * @param {object[]} events
- * @returns {{ additions: Record<string, { http: string[], dynamic_code: import('./dynamic.mjs').DynamicLevel }>, notes: string[] , warnings: Record<string, string[]> }}
+ * @returns {{ additions: Record<string, { http: string[], dynamic_code: import('./dynamic.mjs').DynamicLevel }>, notes: string[] , warnings: Record<string, string[]>, memoryLoads: Set<string> }}
  */
 export function proposalFromEvents(events) {
   const additions = Object.create(null);
   const warnings = Object.create(null);
   const notes = [];
+  const memoryLoads = new Set();
   const get = (name) => (additions[name] ??= { http: [], dynamic_code: false });
   const warn = (name, text) => ((warnings[name] ??= []).includes(text) ? 0 : warnings[name].push(text));
 
@@ -109,6 +110,7 @@ export function proposalFromEvents(events) {
       // text read from resource files (module loaders such as ox_lib) only needs the narrow level; one load() of
       // text from anywhere else needs the full grant
       const level = event.origin === 'files' ? 'files' : true;
+      if (event.origin === 'memory') memoryLoads.add(resource);
       const grant = get(resource);
       grant.dynamic_code = widerDynamic(grant.dynamic_code, level);
       if (level === true) warn(resource, 'dynamic_code lets this resource run any text as Lua (some libraries need it; a backdoor does too)');
@@ -116,5 +118,5 @@ export function proposalFromEvents(events) {
       notes.push(`${resource}: tried to load a binary chunk (never allowed, never proposed)`);
     }
   }
-  return { additions, warnings, notes: [...new Set(notes)] };
+  return { additions, warnings, notes: [...new Set(notes)], memoryLoads };
 }

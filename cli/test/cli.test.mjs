@@ -190,7 +190,10 @@ test('approve --from-logs prints a diff and only writes with --write', () => {
     assert.match(preview.out, /\+ http\s+api\.weather\.example\/v2/);
     assert.ok(!/\+ http\s+api\.weather\.example\/v2\/now/.test(preview.out), 'covered by api.weather.example/v2');
     assert.match(preview.out, /\+ dynamic_code/);
-    assert.match(preview.out, /user content/);
+    assert.match(preview.out, /🔴 suspicious {2}http pastebin\.com\n\s+why {3}pastebin\.com hosts content anybody can publish/);
+    assert.match(preview.out, /left out of the proposal/);
+    assert.match(preview.out, /download-and-run loader/, 'dynamic code plus an unknown host');
+    assert.ok(!/\+ http\s+pastebin\.com/.test(preview.out));
     assert.match(preview.out, /Nothing was written/);
     assert.ok(!fs.existsSync(lockPath));
 
@@ -198,6 +201,7 @@ test('approve --from-logs prints a diff and only writes with --write', () => {
     assert.equal(written.code, 0);
     const lock = readLock(lockPath);
     assert.ok(lock.resources.weather.http.includes('api.weather.example/v2'));
+    assert.ok(!lock.resources.weather.http.includes('pastebin.com'), 'suspicious entries are not written');
     assert.equal(lock.resources.weather.dynamic_code, true);
     assert.equal(lock.resources.weather.declaration_hash, declarationHash({ http: ['api.weather.example/v2'] }));
 
@@ -273,9 +277,9 @@ test('manifest declarations get the same risk warnings as logged targets', () =>
   try {
     writeResource(root, 'risky', "fx_version 'cerulean'\nserver_script 'a.lua'\ntorii_http 'pastebin.com/raw'\ntorii_http 'discord.com'\ntorii_http 'discord.com/api/webhooks/1'\n");
     const out = run(['approve', root, '--lock', path.join(root, 'lock.json')]).out;
-    assert.match(out, /pastebin\.com serves or receives user content/);
-    assert.match(out, /discord\.com accepts data from anyone/);
-    assert.equal(out.match(/discord\.com accepts data/g).length, 1, 'the scoped webhook entry does not warn');
+    assert.match(out, /🔴 suspicious {2}http pastebin\.com\/raw/);
+    assert.equal(out.match(/Discord without a webhook path/g).length, 1, 'only the unscoped entry gets this advice');
+    assert.equal(out.match(/a Discord webhook receives/g).length, 1);
   } finally {
     fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
