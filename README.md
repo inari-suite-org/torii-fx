@@ -177,6 +177,9 @@ command arguments.
   backdoor family is JavaScript. Pair torii with an OS-level egress firewall.
 - It does not see harm that needs no network and no `load` (hidden admin commands, economy exploits), nor data that
   leaves through client events or a trusted resource's exports.
+- **`dynamic_code` is broad in practice.** Every resource that includes `@ox_lib/init.lua` (most modern scripts)
+  compiles ox_lib modules with `load`, so it needs `dynamic_code`, and a resource holding that grant can run any text
+  it receives. A narrower rule (allow `load` only on the resource's own files) is planned for v0.2.
 - Every bypass we considered and its outcome is in the [bypass table](docs/design.md#4-bypasses-considered).
 - It runs **inside the same Lua VM** as the code it guards. Every bypass we know of is closed and has a test
   (`InvokeNative`, native stubs, `debug.getupvalue`, bytecode, redirects, table metamethods), but it is not a hard sandbox.
