@@ -112,7 +112,8 @@ test('approve prints known libraries, writes nothing for them by default, and ap
     assert.match(applied.out, /\+ ox_lib/);
     const lock = readLock(lockPath);
     assert.equal(lock.resources.ox_lib.dynamic_code, true);
-    assert.deepEqual(lock.resources.ox_lib.http, ['api.github.com/repos/overextended']);
+    assert.ok(lock.resources.ox_lib.http.includes('api.github.com/repos/overextended/ox_lib/releases/latest'));
+    assert.ok(lock.resources.ox_lib.http.every((entry) => entry.endsWith('/releases/latest')), 'only the read-only version check');
     assert.equal(lock.resources.oxmysql, undefined, 'unsupported runtimes never get a grant');
   } finally {
     fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });

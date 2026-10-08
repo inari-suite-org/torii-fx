@@ -25,7 +25,9 @@ A hostile resource can be called `ox_lib`. So a preset:
 
 * is only applied with `--use-presets`;
 * is not applied when the manifest lacks the origin hint (an author or repository the real library declares);
-* never contains a bare shared host: `api.github.com` is only suggested as `api.github.com/repos/overextended`;
+* never contains a bare shared host or a whole account: `api.github.com` is only suggested as the exact
+  `api.github.com/repos/overextended/<resource>/releases/latest` paths, because the rest of `/repos/overextended` also
+  accepts issues and comments, a way to post data out;
 * is always printed with the commit it was checked at, so you can compare with the source.
 
 The hint is a partial guard: a manifest can be copied. Check that the folder really comes from the repository the
