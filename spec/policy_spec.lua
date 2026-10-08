@@ -162,7 +162,7 @@ describe('Policy:check_http', function()
 		assert.is_true(d.allow)
 		assert.is_nil(d.target:find(token, 1, true))
 		assert.is_nil(d.target:find('secret', 1, true))
-		assert.are.equal('https://discord.com/api/webhooks/123', d.target)
+		assert.are.equal('https://discord.com/api/webhooks/123/<redacted>', d.target)
 	end)
 
 	it('warns when a user-content host is allowed without a path prefix', function()

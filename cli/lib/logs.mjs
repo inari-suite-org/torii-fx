@@ -68,10 +68,16 @@ export function targetToEntry(target) {
   const [, scheme, host, port = '', pathPart = '/'] = match;
   const warnings = [];
   let pathText = pathPart;
-  const redacted = pathText.split('/').findIndex((segment) => segment === '<redacted>');
-  if (redacted !== -1) {
-    pathText = `${pathText.split('/').slice(0, redacted).join('/') || '/'}`;
-    warnings.push(`a token-like path segment was removed from ${host}; check the prefix is specific enough`);
+  // the runtime replaces token-like segments with <redacted> and marks a path it cut with <more>
+  const segments = pathText.split('/');
+  const marker = segments.findIndex((segment) => segment === '<redacted>' || segment === '<more>');
+  if (marker !== -1) {
+    pathText = `${segments.slice(0, marker).join('/') || '/'}`;
+    warnings.push(
+      segments[marker] === '<redacted>'
+        ? `a token-like path segment was removed from ${host}; check the prefix is specific enough`
+        : `the log keeps only the start of this path on ${host}; the proposed prefix is broader than what the script asked for`,
+    );
   }
   const warning = riskWarning(host.toLowerCase(), pathText !== '/');
   if (warning) warnings.push(warning);

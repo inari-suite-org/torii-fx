@@ -66,6 +66,8 @@ const PATHS = [
   () => `/repos/${pick(OWNERS)}/${pick(['ox_lib', 'qb-core', 'es_extended', 'loader', 'a.b_c-d'])}/releases/latest`,
   () => `/repos/${pick(OWNERS)}/x/issues`,
   () => `/repos/${pick(OWNERS)}`,
+  () => `/repos/${pick(OWNERS)}/x/releases/latest/<more>`,
+  () => `/${word(1, 4)}/${word(1, 4)}/${word(1, 4)}/${word(1, 4)}/${word(1, 4)}/<more>`,
 ];
 
 function generate() {

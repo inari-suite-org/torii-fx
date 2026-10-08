@@ -27,6 +27,9 @@ stay on the `v0.2` branch.
 ### Changed
 
 - The step-by-step guide uses `approve --ask`, `torii exempt` and the console review.
+- The log keeps five path segments instead of three, and marks a path it cut with `<more>`. Found by the
+  compatibility run: a GitHub version check was logged as `/repos/<owner>/<repo>`, so `approve --from-logs` proposed
+  a prefix that also covers issues and comments. Now the exact `/releases/latest` path is proposed.
 
 ## [0.1.0] — 2026-10-08
 

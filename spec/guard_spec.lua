@@ -173,7 +173,7 @@ describe('guard: HTTP via the named native (what PerformHttpRequest ends up call
 			-1,
 			s.G.PerformHttpRequestInternalEx({ url = 'https://discord.com/api/webhooks/999/' .. TOKEN })
 		)
-		assert.are.equal('https://discord.com/api/webhooks/999', s.events[1].target)
+		assert.are.equal('https://discord.com/api/webhooks/999/<redacted>', s.events[1].target)
 		assert.is_nil(s.events[1].target:find(TOKEN, 1, true))
 	end)
 

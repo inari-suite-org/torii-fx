@@ -150,7 +150,9 @@ function M.split_target(target)
 	if kind == 'name' and match(host, '^%d+%.%d+%.%d+%.%d+$') then
 		kind = 'ipv4'
 	end
-	local cut = find(path, '/<redacted>', 1, true)
+	-- the log replaces token-like segments by <redacted> and cuts long paths with <more>: keep what is known
+	local cut = find(path, '/<', 1, true)
+	local truncated = cut ~= nil
 	if cut then
 		path = sub(path, 1, cut - 1)
 	end
@@ -160,7 +162,7 @@ function M.split_target(target)
 	if path == '' then
 		path = '/'
 	end
-	return { scheme = scheme, host = host, port = port, path = path, kind = kind }
+	return { scheme = scheme, host = host, port = port, path = path, kind = kind, truncated = truncated }
 end
 
 --- Verdict for an HTTP destination: { level = 'common'|'check'|'suspicious', code = string, params = table,

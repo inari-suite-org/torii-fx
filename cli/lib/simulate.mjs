@@ -1,7 +1,7 @@
 // Replaying observe-mode events against a lockfile: what would enforce mode block, and why.
 //
-// The runtime log keeps only a safe summary of each request (no query string, at most three path segments, long
-// opaque segments replaced by <redacted>). So a path-prefix entry longer than what the log kept cannot always be
+// The runtime log keeps only a safe summary of each request (no query string, at most five path segments then
+// <more>, long opaque segments replaced by <redacted>; logs from v0.1 kept three segments and no marker). So a path-prefix entry longer than what the log kept cannot always be
 // decided: those cases are reported as "cannot tell" instead of being guessed.
 
 import { dynamicAllows } from './dynamic.mjs';
@@ -19,20 +19,20 @@ const BLOCKING_DECISIONS = new Set(['deny', 'would_deny']);
 
 /** Splits a logged target ("https://host:8443/a/<redacted>") into what is known about it. */
 export function parseLoggedTarget(target) {
-  const parsed = normalizeEntry(String(target ?? '').replace('<redacted>', 'x-redacted-x'));
+  const parsed = normalizeEntry(String(target ?? '').replace(/<(redacted|more)>/g, 'x-marker-x'));
   if (!parsed.ok) return null;
   const match = /^(https?):\/\//i.exec(String(target));
   const scheme = match ? match[1].toLowerCase() : 'https';
   const afterHost = String(target).replace(/^https?:\/\/[^/]+/i, '');
   const segments = afterHost.split('/').filter(Boolean);
-  const redactedAt = segments.indexOf('<redacted>');
-  const known = redactedAt === -1 ? segments : segments.slice(0, redactedAt);
+  const markerAt = segments.findIndex((segment) => segment === '<redacted>' || segment === '<more>');
+  const known = markerAt === -1 ? segments : segments.slice(0, markerAt);
   return {
     scheme,
     hostPort: parsed.entry.replace(/^http:\/\//, '').split('/')[0],
     knownSegments: known,
-    // the runtime keeps at most three segments, and stops at the first token-like one
-    truncated: redactedAt !== -1 || segments.length >= 3,
+    // a marker says so; without one, three segments may be a v0.1 log that cut the path silently
+    truncated: markerAt !== -1 || segments.length === 3,
   };
 }
 

@@ -184,3 +184,16 @@ test("dynamic_code 'files': levels, merging, approve and simulate", async () => 
     ],
   );
 });
+
+test('a path the runtime cut is never proposed as if it were whole', async () => {
+  const { targetToEntry, proposalFromEvents } = await import('../lib/logs.mjs');
+  const cut = targetToEntry('https://api.example.com/a/b/c/d/e/<more>');
+  assert.equal(cut.entry, 'api.example.com/a/b/c/d/e');
+  assert.match(cut.warnings.join(' '), /keeps only the start of this path/);
+  assert.equal(parseLoggedTarget('https://api.example.com/a/b/c/d/e/<more>').truncated, true);
+  assert.equal(parseLoggedTarget('https://api.example.com/a/b').truncated, false);
+
+  // what the compatibility run logged for ox_lib's version check, in the new log format: the exact read-only path
+  const event = { resource: 'ox_lib', type: 'http', decision: 'would_deny', reason: 'resource_not_in_lockfile', target: 'https://api.github.com/repos/overextended/ox_lib/releases/latest' };
+  assert.deepEqual(proposalFromEvents([event]).additions.ox_lib.http, ['api.github.com/repos/overextended/ox_lib/releases/latest']);
+});
