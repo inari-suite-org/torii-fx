@@ -187,7 +187,7 @@ test('approve --from-logs prints a diff and only writes with --write', () => {
     assert.equal(preview.code, 0);
     assert.match(preview.out, /\+ weather/);
     assert.match(preview.out, /\+ http\s+api\.weather\.example\/v2/);
-    assert.match(preview.out, /\+ http\s+api\.weather\.example\/v2\/now/);
+    assert.ok(!/\+ http\s+api\.weather\.example\/v2\/now/.test(preview.out), 'covered by api.weather.example/v2');
     assert.match(preview.out, /\+ dynamic_code/);
     assert.match(preview.out, /user content/);
     assert.match(preview.out, /Nothing was written/);
@@ -310,4 +310,25 @@ test('hostile resource names cannot pollute prototypes and untrusted text cannot
   } finally {
     fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
+});
+
+test('approve does not propose entries already covered by a broader one, and never drops existing grants', async () => {
+  const { covers } = await import('../lib/lock.mjs');
+  assert.equal(covers('api.github.com/repos/overextended', 'api.github.com/repos/overextended/ox_lib'), true);
+  assert.equal(covers('api.github.com', 'api.github.com/repos/x'), true);
+  assert.equal(covers('api.github.com/repos/overextended', 'api.github.com/repos/overextended-evil'), false);
+  assert.equal(covers('api.github.com/repos/a', 'api.github.com/repos'), false);
+  assert.equal(covers('http://example.com', 'example.com/x'), false, 'scheme matters');
+  assert.equal(covers('example.com:8443', 'example.com/x'), false, 'port matters');
+
+  const lock = mergeAdditions(emptyLock(), {
+    ox_lib: { http: ['api.github.com/repos/overextended/ox_lib', 'api.github.com/repos/overextended', 'other.example/x'] },
+  });
+  assert.deepEqual(lock.resources.ox_lib.http.sort(), ['api.github.com/repos/overextended', 'other.example/x']);
+
+  const kept = mergeAdditions(
+    { version: 1, exempt: [], resources: { r: { http: ['a.example/deep/path'], dynamic_code: false, follow_redirects: false } } },
+    { r: { http: ['a.example/deep'] } },
+  );
+  assert.deepEqual(kept.resources.r.http.sort(), ['a.example/deep', 'a.example/deep/path']);
 });

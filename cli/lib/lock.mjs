@@ -2,6 +2,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { normalizeEntry } from './entries.mjs';
 import { isSafeResourceName } from './names.mjs';
 
 export const LOCK_VERSION = 1;
@@ -55,6 +56,23 @@ export function writeLock(file, lock) {
   fs.renameSync(tmp, file);
 }
 
+/** True when allow-list entry `broad` already allows everything `narrow` allows (same scheme, host and port; path
+ * prefix on segment boundaries). Entries that do not parse cover nothing. */
+export function covers(broad, narrow) {
+  const a = normalizeEntry(broad);
+  const b = normalizeEntry(narrow);
+  if (!a.ok || !b.ok) return false;
+  const split = (entry) => {
+    const scheme = entry.startsWith('http://') ? 'http' : 'https';
+    const [hostPort, ...segments] = entry.replace(/^http:\/\//, '').split('/');
+    return { scheme, hostPort, segments };
+  };
+  const x = split(a.entry);
+  const y = split(b.entry);
+  if (x.scheme !== y.scheme || x.hostPort !== y.hostPort || x.segments.length > y.segments.length) return false;
+  return x.segments.every((segment, i) => segment === y.segments[i]);
+}
+
 /**
  * Applies proposed additions to a lock without ever removing an existing grant.
  * @param {Lock} lock
@@ -66,7 +84,10 @@ export function mergeAdditions(lock, additions) {
   for (const [name, add] of Object.entries(additions)) {
     if (!isSafeResourceName(name)) continue;
     const current = next.resources[name] ?? { http: [], dynamic_code: false, follow_redirects: false };
-    current.http = [...new Set([...current.http, ...(add.http ?? [])])];
+    const union = [...new Set([...current.http, ...(add.http ?? [])])];
+    // a new entry already covered by a broader one (same host, shorter path prefix) adds nothing but reading time;
+    // existing grants are never removed
+    current.http = union.filter((entry) => current.http.includes(entry) || !union.some((other) => other !== entry && covers(other, entry)));
     current.dynamic_code = current.dynamic_code || add.dynamic_code === true;
     current.follow_redirects = current.follow_redirects || add.follow_redirects === true;
     if (add.declaration_hash) current.declaration_hash = add.declaration_hash;
