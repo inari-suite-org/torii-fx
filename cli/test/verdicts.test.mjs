@@ -18,9 +18,16 @@ test('http verdicts: suspicious shapes', () => {
 });
 
 test('http verdicts: common only for scoped, read-only, known destinations', () => {
-  assert.equal(level('api.github.com/repos/overextended'), 'common');
-  assert.equal(level('api.github.com/repos/overextended/ox_lib/releases/latest'), 'common');
-  assert.equal(level('api.github.com/repos/some-author/some_script/releases/latest'), 'common', 'a version check');
+  // an account prefix also covers issues and comments, a way to post data out: never common
+  assert.equal(level('api.github.com/repos/overextended'), 'check');
+  assert.equal(level('api.github.com/repos/overextended/ox_lib/issues'), 'check');
+  const trusted = httpVerdict('api.github.com/repos/Overextended/ox_lib/releases/latest', { common });
+  assert.equal(trusted.level, 'common');
+  assert.equal(trusted.weak, undefined);
+  const other = httpVerdict('api.github.com/repos/some-author/some_script/releases/latest', { common });
+  assert.equal(other.level, 'common', 'a version check');
+  assert.equal(other.weak, true, 'an account torii does not know');
+  assert.equal(level('http://api.github.com/repos/some-author/some_script/releases/latest'), 'check');
   assert.equal(level('api.github.com/repos/some-author/some_script/contents/payload.lua'), 'check', 'not a version check');
   assert.equal(level('api.github.com'), 'check');
   const preset = [{ entry: 'api.example.com/v1', id: 'example_lib' }];
@@ -50,23 +57,29 @@ test('dynamic code verdicts', () => {
 
 test('running any code and reaching an unknown host is the loader shape', () => {
   const unknown = { entry: 'api.weather.example', verdict: httpVerdict('api.weather.example', { common }) };
-  const known = { entry: 'api.github.com/repos/overextended', verdict: httpVerdict('api.github.com/repos/overextended', { common }) };
+  const item = (entry) => ({ entry, verdict: httpVerdict(entry, { common }) });
+  const known = item('api.github.com/repos/overextended/ox_lib/releases/latest');
+  const strangersRelease = item('api.github.com/repos/some-author/loader/releases/latest');
   assert.equal(resourceLevel({ http: [unknown], dynamic: dynamicVerdict(true) }), 'suspicious');
   assert.equal(resourceLevel({ http: [unknown], dynamic: dynamicVerdict('files') }), 'check');
   assert.equal(resourceLevel({ http: [known], dynamic: dynamicVerdict(true) }), 'check');
   assert.equal(resourceLevel({ http: [known], dynamic: null }), 'common');
+  // a release text from an unknown account is a fine version check, and a payload channel for code that runs any text
+  assert.equal(resourceLevel({ http: [strangersRelease], dynamic: null }), 'common');
+  assert.equal(resourceLevel({ http: [strangersRelease], dynamic: dynamicVerdict('files') }), 'common');
+  assert.equal(resourceLevel({ http: [strangersRelease], dynamic: dynamicVerdict(true) }), 'suspicious');
 });
 
 test('review leaves suspicious items out unless asked, and never re-reviews existing grants', () => {
   const lock = { resources: { shop: { http: ['api.shop.example'], dynamic_code: false } } };
   const fresh = () => ({
-    shop: { http: ['api.shop.example', '45.133.1.20', 'api.github.com/repos/overextended'], dynamic_code: true },
+    shop: { http: ['api.shop.example', '45.133.1.20', 'api.github.com/repos/overextended/ox_lib/releases/latest'], dynamic_code: true },
     lib_user: { http: [], dynamic_code: 'files' },
   });
 
   const additions = fresh();
   const review = reviewAdditions(lock, additions, { memoryLoads: new Set(['shop']), common });
-  assert.deepEqual(additions.shop.http, ['api.shop.example', 'api.github.com/repos/overextended']);
+  assert.deepEqual(additions.shop.http, ['api.shop.example', 'api.github.com/repos/overextended/ox_lib/releases/latest']);
   assert.equal(additions.shop.dynamic_code, false, 'suspicious dynamic code falls back to the current grant');
   assert.equal(additions.lib_user.dynamic_code, 'files');
   assert.deepEqual(review.map((item) => [item.name, item.level]), [['shop', 'suspicious'], ['lib_user', 'common']]);
@@ -85,14 +98,18 @@ test('review leaves suspicious items out unless asked, and never re-reviews exis
   assert.equal(kept.shop.dynamic_code, true);
 });
 
-test('the common list only holds scoped, read-only destinations with a reason and a source', () => {
-  assert.ok(common.length > 0);
-  const raw = loadCommonHosts();
-  for (const item of raw) {
+test('the common list only holds exact read-only destinations with a reason and a source', () => {
+  assert.ok(common.releaseOwners.length > 0);
+  for (const item of common.releaseOwners) {
+    assert.match(item.owner, /^[A-Za-z0-9-]+$/);
+    assert.ok(item.why.length > 10, item.owner);
+    assert.ok(String(item.source ?? '').startsWith('https://'), `${item.owner} needs a source`);
+  }
+  for (const item of common.entries) {
     const parsed = normalizeEntry(item.entry);
     assert.ok(parsed.ok, item.entry);
     assert.ok(parsed.hasPath, `${item.entry} must be scoped to a path`);
-    assert.notEqual(hostRisk(parsed.host), 'user_content', `${item.entry} serves anybody's content`);
+    assert.ok(hostRisk(parsed.host) === null, `${item.entry}: a service that serves or accepts anybody's content is never common`);
     assert.ok(item.why.length > 10, item.entry);
     assert.ok(String(item.source ?? '').startsWith('https://'), `${item.entry} needs a source`);
   }

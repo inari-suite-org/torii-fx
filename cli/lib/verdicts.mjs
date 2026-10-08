@@ -16,24 +16,34 @@ export const LABELS = { common: '🟢 common', check: '🟠 check', suspicious: 
 
 const COMMON_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'presets', 'common-hosts.json');
 
-/** @returns {{ entry: string, why: string }[]} */
+/** @typedef {{ entries: { entry: string, why: string, source?: string }[], releaseOwners: { owner: string, why: string, source?: string }[] }} CommonList */
+
+/** @returns {CommonList} */
 export function loadCommonHosts(file = COMMON_FILE) {
   const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-  return (raw.entries ?? []).filter((item) => typeof item.entry === 'string' && typeof item.why === 'string');
+  return {
+    entries: (raw.entries ?? []).filter((item) => typeof item.entry === 'string' && typeof item.why === 'string'),
+    releaseOwners: (raw.releaseOwners ?? []).filter((item) => typeof item.owner === 'string' && typeof item.why === 'string'),
+  };
 }
 
 const DISCORD = new Set(['discord.com', 'ptb.discord.com', 'canary.discord.com', 'discordapp.com']);
-// GET https://api.github.com/repos/<owner>/<repo>/releases/latest: the usual version check of FiveM scripts
-const RELEASE_CHECK = /^\/repos\/[A-Za-z0-9-]+\/[A-Za-z0-9._-]+\/releases\/latest$/;
+// GET https://api.github.com/repos/<owner>/<repo>/releases/latest: the usual version check of FiveM scripts. Only this
+// exact read-only path: the rest of the API under /repos/<owner> also accepts issues and comments from any account.
+const RELEASE_CHECK = /^\/repos\/([A-Za-z0-9-]+)\/[A-Za-z0-9._-]+\/releases\/latest$/;
 
-/** @typedef {{ level: 'common'|'check'|'suspicious', why: string, todo: string }} Verdict */
+/**
+ * `weak`: common on its own, but the content comes from an account torii does not know, so it does not vouch for a
+ * resource that can also run code it receives (see loaderShape).
+ * @typedef {{ level: 'common'|'check'|'suspicious', why: string, todo: string, weak?: boolean }} Verdict
+ */
 
 /**
  * @param {string} entry a lockfile http entry (canonical or not)
- * @param {{ common?: { entry: string, why: string }[], preset?: { entry: string, id: string }[] }} context
+ * @param {{ common?: CommonList, preset?: { entry: string, id: string }[] }} context
  * @returns {Verdict}
  */
-export function httpVerdict(entry, { common = [], preset = [] } = {}) {
+export function httpVerdict(entry, { common = { entries: [], releaseOwners: [] }, preset = [] } = {}) {
   const parsed = normalizeEntry(entry);
   if (!parsed.ok) return { level: 'suspicious', why: `not a valid address (${parsed.reason})`, todo: 'do not allow' };
   const host = parsed.host;
@@ -53,10 +63,19 @@ export function httpVerdict(entry, { common = [], preset = [] } = {}) {
   }
   const fromPreset = preset.find((item) => covers(item.entry, parsed.entry));
   if (fromPreset) return { level: 'common', why: `needed by ${fromPreset.id} (checked against its source)`, todo: 'nothing to do' };
-  const known = common.find((item) => covers(item.entry, parsed.entry));
+  const known = common.entries.find((item) => covers(item.entry, parsed.entry));
   if (known) return { level: 'common', why: known.why, todo: 'nothing to do' };
-  if (host === 'api.github.com' && RELEASE_CHECK.test(pathPart)) {
-    return { level: 'common', why: 'version check: reads the latest release of one GitHub repository', todo: 'nothing to do' };
+  const release = host === 'api.github.com' && !plainHttp ? RELEASE_CHECK.exec(pathPart) : null;
+  if (release) {
+    const owner = release[1].toLowerCase();
+    const trusted = common.releaseOwners.find((item) => item.owner.toLowerCase() === owner);
+    if (trusted) return { level: 'common', why: trusted.why, todo: 'nothing to do' };
+    return {
+      level: 'common',
+      weak: true,
+      why: `version check: reads the latest release of one repository of the GitHub account "${release[1]}"`,
+      todo: 'nothing to do, as long as this script cannot run code it downloads',
+    };
   }
   if (DISCORD.has(host)) {
     if (!pathPart.startsWith('/api/webhooks/')) {
@@ -101,7 +120,7 @@ export function dynamicVerdict(level, { fromPreset, memoryLoads = false } = {}) 
 
 /** Running arbitrary code and reaching a destination that is not common: how a download-and-run loader looks. */
 export function loaderShape({ http, dynamic }) {
-  return dynamic !== null && dynamic.level !== 'common' && http.some((item) => item.verdict.level !== 'common');
+  return dynamic !== null && dynamic.level !== 'common' && http.some((item) => item.verdict.level !== 'common' || item.verdict.weak === true);
 }
 
 /**
@@ -123,7 +142,7 @@ export function resourceLevel(items) {
  * @param {{ resources: Record<string, { http: string[], dynamic_code: import('./dynamic.mjs').DynamicLevel }> }} lock
  * @param {Record<string, { http: string[], dynamic_code: import('./dynamic.mjs').DynamicLevel }>} additions changed in place
  * @param {{ presetGrants?: Record<string, { id: string, grants: { http: string[], dynamic_code: boolean } }>,
- *   memoryLoads?: Set<string>, keepSuspicious?: boolean, common?: { entry: string, why: string }[] }} options
+ *   memoryLoads?: Set<string>, keepSuspicious?: boolean, common?: CommonList }} options
  */
 export function reviewAdditions(lock, additions, options = {}) {
   const { presetGrants = {}, memoryLoads = new Set(), keepSuspicious = false, common = loadCommonHosts() } = options;
@@ -168,7 +187,7 @@ export function reviewLines(review) {
   const lines = [];
   const detail = (verdict, leftOut) => {
     lines.push(`         why   ${verdict.why}`);
-    if (verdict.level !== 'common') lines.push(`         do    ${verdict.todo}`);
+    if (verdict.level !== 'common' || verdict.weak) lines.push(`         do    ${verdict.todo}`);
     if (leftOut) lines.push('         left out of the proposal (add --include-suspicious to keep it)');
   };
   for (const item of review) {
