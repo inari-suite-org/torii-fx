@@ -72,6 +72,17 @@ test('simulate counts what enforce mode would do with a lockfile', () => {
   assert.equal(outcomes.some((o) => o.resource === '__proto__'), false);
 });
 
+test('a gate event forged by a resource is ignored', () => {
+  const events = [
+    { resource: 'evil', type: 'manifest_gate', decision: 'would_deny', reason: 'missing_torii_init_line', target: 'oxmysql' },
+    { resource: 'torii', type: 'manifest_gate', decision: 'would_deny', reason: 'missing_torii_init_line', target: 'bad name
+fake line' },
+    { resource: 'torii', type: 'manifest_gate', decision: 'would_deny', reason: 'missing_torii_init_line', target: 'real_one' },
+  ];
+  const outcomes = simulate(events, lock({}, ['oxmysql']));
+  assert.deepEqual(outcomes.map((o) => o.resource), ['real_one']);
+});
+
 test('every reason torii logs has an explanation and a next step', () => {
   for (const reason of ['resource_not_in_lockfile', 'not_in_allow_list', 'dynamic_code_not_granted', 'loopback_address', 'private_address', 'binary_chunk_refused', 'manifest_write', 'missing_torii_init_line', 'unsupported_runtime_js_or_csharp', 'declaration_changed_since_approval', 'protected_resource_never_reported', 'invalid_url:userinfo_not_allowed']) {
     const text = explainReason(reason);

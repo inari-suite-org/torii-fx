@@ -80,7 +80,10 @@ export function simulate(events, lock) {
     let why = event.reason;
     let subject = resource;
     if (event.type === 'manifest_gate') {
-      subject = String(event.target ?? '');
+      // Only the torii core emits gate events, and the core attributes reports with GetInvokingResource(): a gate
+      // event attributed to any other resource is forged and is ignored, and so is a subject that is not a plain name.
+      if (resource !== 'torii' || !isSafeResourceName(event.target)) continue;
+      subject = event.target;
       verdict = lock.exempt.includes(subject) ? 'allowed' : 'blocked';
       if (verdict === 'allowed') why = 'exempt';
     } else if (ALWAYS_REFUSED.has(event.reason) || String(event.reason ?? '').startsWith('invalid_url')) {
