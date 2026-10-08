@@ -40,6 +40,8 @@ describe('known-library presets', function()
 		assert.is_false(p:check_http('ox_lib', 'https://api.github.com/repos/someone-else/x/releases/latest').allow)
 		assert.is_false(p:check_http('ox_lib', 'https://api.github.com/repos/overextended-evil/x').allow)
 		assert.is_false(p:check_http('ox_lib', 'https://api.github.com/users/overextended').allow)
+		-- the rest of the account accepts issues and comments: a way to post data out
+		assert.is_false(p:check_http('ox_lib', 'https://api.github.com/repos/overextended/ox_lib/issues').allow)
 		assert.is_true(p:check_dynamic_code('ox_lib'))
 	end)
 

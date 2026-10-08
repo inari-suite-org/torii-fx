@@ -12,10 +12,13 @@
         "scope": "every tracked .lua file",
         "lookedFor": ["PerformHttpRequest", "load", "loadstring", "SaveResourceFile", "SetHttpHandler", "ExecuteCommand"]
       },
-      "grants": { "dynamic_code": true, "http": ["api.github.com/repos/overextended"] },
+      "grants": {
+        "dynamic_code": true,
+        "http": ["api.github.com/repos/overextended/ox_lib/releases/latest", "api.github.com/repos/overextended/ox_inventory/releases/latest", "api.github.com/repos/overextended/ox_target/releases/latest", "api.github.com/repos/overextended/ox_core/releases/latest", "api.github.com/repos/overextended/ox_doorlock/releases/latest", "api.github.com/repos/overextended/ox_fuel/releases/latest", "api.github.com/repos/overextended/ox_banking/releases/latest", "api.github.com/repos/overextended/ox_commands/releases/latest", "api.github.com/repos/overextended/ox_mdt/releases/latest", "api.github.com/repos/overextended/ox_vehicledealer/releases/latest", "api.github.com/repos/overextended/oxmysql/releases/latest"]
+      },
       "why": [
         "dynamic_code: compiles its own modules with load() (init.lua, imports/require/shared.lua, resource/init.lua)",
-        "http: lib.versionCheck asks api.github.com for the latest release of each Overextended resource"
+        "http: lib.versionCheck (run inside ox_lib) asks api.github.com for the latest release of each Overextended resource; only that read-only path, because the rest of /repos/overextended also accepts issues and comments"
       ],
       "youProvide": ["the destination of lib.logger (Datadog, Fivemanage, Loki, Graylog), only if you enabled it"],
       "alsoSeen": [
