@@ -16,6 +16,7 @@ console. Nothing here uses the network except `exp10`, which talks to a Python s
 | `exp07_ioread` | How far does `io.open` read? | create a harmless file containing `CANARY-OK`, `ensure exp07_ioread`, *exp07_read <path>* for each path to test | an absolute host path becomes readable |
 | `exp08_bench` | Cost of a wrapper layer | `ensure exp08_bench`, *exp08_bench 1000000* twice, ignore the first run | a simple wrapper costs several microseconds per call |
 | `exp10_redirect` | Does the HTTP native follow redirects? | in `exp10_redirect/`: `python redirect_server.py`; then `ensure exp10_redirect`, *exp10_run*, *exp10_raw* | redirects are no longer followed by default |
+| `exp11_*` | Can a script run a restricted console command, and what does the handler see? (torii's console commands rely on it) | `ensure exp11_target`, `ensure exp11_caller_lua`, `ensure exp11_caller_js`; type *exp11_secure typed*, then *exp11_call* and *exp11_call_js*; then add `add_ace resource.exp11_caller_lua command.exp11_secure allow` and run *exp11_call* again | a resource runs `exp11_secure` without an ACL, or the handler sees `invoking=nil` for a call that came from a resource |
 
 None of these resources prints file contents, secrets or convar values.
 
