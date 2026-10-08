@@ -30,6 +30,19 @@ node research/url-differential/run.mjs 3000 20261008   # count, seed
 
 It exits with an error if torii accepts a URL that curl reads differently.
 
+## Verdicts: approve against the console
+
+`verdict-differential/` generates logged targets (look-alike names, raw IP addresses, punycode, paste sites, webhooks,
+GitHub release checks from trusted and unknown accounts) and checks that `torii approve` and the server console give
+each one the same verdict. They are two implementations of the same rules, in JavaScript and in Lua.
+
+```bash
+node research/verdict-differential/run.mjs 5000 20261008   # count, seed
+```
+
+It exits with an error and lists the cases when they disagree. Last run: about 16,500 targets over four seeds, no
+difference.
+
 ## Asset Escrow (not yet verified)
 
 Needs a resource protected by Cfx Asset Escrow that you own, on a server whose license belongs to the same Cfx

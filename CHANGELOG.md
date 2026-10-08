@@ -22,6 +22,7 @@ stay on the `v0.2` branch.
 - English and French messages for the server owner (`set torii_lang "fr"`).
 - `torii simulate` (replay observe logs against a lockfile) and `torii explain` (why each event was blocked).
 - Experiment 11 (who can run a restricted console command) and a console-check script for a development server.
+- A differential test that checks `approve` and the console give every destination the same verdict.
 
 ### Changed
 
