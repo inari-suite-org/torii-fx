@@ -10,11 +10,11 @@ import { proposalFromEvents, readEvents, riskWarning, targetToEntry } from './li
 import { hostSignals } from './lib/hosts.mjs';
 import { explainReason, FIXES } from './lib/reasons.mjs';
 import { simulate } from './lib/simulate.mjs';
-import { widerDynamic } from './lib/dynamic.mjs';
+import { lockDynamic, widerDynamic } from './lib/dynamic.mjs';
 import { normalizeEntry } from './lib/entries.mjs';
 import { isSafeResourceName } from './lib/names.mjs';
 import { appliesTo, describeMatch, loadPresets, matchPresets } from './lib/presets.mjs';
-import { reviewAdditions, reviewLines } from './lib/verdicts.mjs';
+import { LABELS, reviewAdditions, reviewLines } from './lib/verdicts.mjs';
 import { findResources, inspectManifest, installInto, isEscrowed, uninstallFrom } from './lib/manifest.mjs';
 
 const HELP = `torii - runtime permission firewall for FiveM Lua resources
@@ -25,6 +25,9 @@ Usage:
   torii status    <resources-dir>                 which resources are protected, which run JS/C# torii cannot inspect
   torii approve   <resources-dir> [options]       propose lockfile changes as a diff (nothing is written without --write)
 
+  torii exempt    <resources-dir> [names] [--write] list the JavaScript/C# resources torii cannot inspect, or exempt them
+                                                  (--remove takes them off the list again)
+
   torii simulate  <resources-dir> --from-logs <f> what enforce mode would block with the current lockfile
   torii explain   <resources-dir> --from-logs <f> why each event was blocked, and what to do about it
 
@@ -34,6 +37,7 @@ approve options:
   --use-presets        include the suggestions for well-known libraries (ox_lib, es_extended, ...) in the proposal
   --write              write the proposal to the lockfile (default: print the diff only)
   --include-suspicious keep the items marked suspicious in the proposal (left out by default)
+  --ask                one question per item that is not common, then confirm before writing
 
 simulate / explain options:
   --lock <file>        lockfile to test (default: <resources-dir>/torii/policy.lock.json)
@@ -139,6 +143,56 @@ function status(dir, io) {
   return 0;
 }
 
+const NL = '\n';
+
+/** One line from standard input, read synchronously (approve --ask). An empty answer at end of input. */
+function promptLine(question, out) {
+  out(question);
+  const byte = Buffer.alloc(1);
+  let line = '';
+  for (;;) {
+    let n;
+    try {
+      n = fs.readSync(0, byte, 0, 1, null);
+    } catch (error) {
+      if (error.code === 'EAGAIN') continue;
+      if (error.code === 'EOF') return line;
+      throw error;
+    }
+    if (n === 0) return line;
+    const ch = byte.toString('utf8');
+    if (ch === '\n') return line.replace(/\r$/, '');
+    line += ch;
+  }
+}
+
+const yes = (answer) => /^(y|yes|o|oui)$/i.test(String(answer ?? '').trim());
+const fullYes = (answer) => /^(yes|oui)$/i.test(String(answer ?? '').trim());
+
+/**
+ * approve --ask: one question per item that is not common. Enter means no. A suspicious item needs "yes" in full.
+ * Changes `additions` in place.
+ */
+function askDecisions(review, additions, lock, io) {
+  io.out(`Decide each item (Enter = no; a suspicious item needs "yes" in full).${NL}${NL}`);
+  for (const item of review) {
+    const add = additions[item.name];
+    for (const { entry, verdict } of item.http) {
+      if (verdict.level === 'common') continue;
+      const strict = verdict.level === 'suspicious';
+      const answer = io.ask(`${LABELS[verdict.level]}  ${item.name}  http ${entry}  allow? ${strict ? '[type yes] ' : '[y/N] '}`);
+      add.http = add.http.filter((other) => other !== entry);
+      if (strict ? fullYes(answer) : yes(answer)) add.http.push(entry);
+    }
+    if (item.dynamic && item.dynamic.level !== 'common') {
+      const strict = item.dynamic.level === 'suspicious';
+      const answer = io.ask(`${LABELS[item.dynamic.level]}  ${item.name}  dynamic_code  allow? ${strict ? '[type yes] ' : '[y/N] '}`);
+      add.dynamic_code = (strict ? fullYes(answer) : yes(answer)) ? item.wanted : lockDynamic(lock.resources[item.name]?.dynamic_code);
+    }
+  }
+  io.out(NL);
+}
+
 function approve(dir, flags, io) {
   const lockPath = flags.lock ?? path.join(dir, 'torii', 'policy.lock.json');
   const lock = readLock(lockPath);
@@ -224,6 +278,12 @@ function approve(dir, flags, io) {
     if (warnings[item.name]) warnings[item.name] = warnings[item.name].filter((text) => !item.covered.some((part) => text.includes(part)));
     if (warnings[item.name]?.length === 0) delete warnings[item.name];
   }
+  if (flags.ask && review.length > 0) {
+    io.out('Review (read this first)' + NL + NL);
+    for (const line of reviewLines(review)) io.out(line + NL);
+    io.out(NL);
+    askDecisions(review, additions, lock, io);
+  }
 
   // 5. hash of what each manifest declares today (resources unknown to the scan hash as "declares nothing")
   for (const name of Object.keys(additions)) {
@@ -243,7 +303,7 @@ function approve(dir, flags, io) {
     io.out('No changes to propose.\n');
     return 0;
   }
-  if (review.length > 0) {
+  if (review.length > 0 && !flags.ask) {
     io.out('Review (read this first)\n\n');
     for (const line of reviewLines(review)) io.out(`${line}\n`);
     io.out('\n');
@@ -262,11 +322,84 @@ function approve(dir, flags, io) {
     io.out('\nKnown libraries found:\n');
     for (const line of presetLines) io.out(`${line}\n`);
   }
-  if (flags.write) {
+  const write = flags.write || (flags.ask && lines.length > 0 && yes(io.ask(`\nWrite these changes to ${lockPath}? [y/N] `)));
+  if (write) {
     writeLock(lockPath, next);
     io.out(`\nWritten. Restart torii (or the resources) for the new lockfile to take effect.\n`);
   } else {
-    io.out('\nNothing was written. Review the diff, then re-run with --write.\n');
+    io.out(flags.ask ? '\nNothing was written.\n' : '\nNothing was written. Review the diff, then re-run with --write.\n');
+  }
+  return 0;
+}
+
+/**
+ * `torii exempt <dir> [names...]`: lists the JavaScript/C# resources torii cannot inspect, or adds names to the
+ * lockfile's "exempt" list (removes them with --remove). Like approve, nothing is written without --write.
+ */
+function exempt(dir, names, flags, io) {
+  const lockPath = flags.lock ?? path.join(dir, 'torii', 'policy.lock.json');
+  const lock = readLock(lockPath);
+  const resources = new Map(findResources(dir).map((r) => [r.name, r]));
+  const catalog = loadPresets();
+
+  if (names.length === 0) {
+    const candidates = [];
+    for (const [name, resource] of resources) {
+      const info = inspectManifest(fs.readFileSync(resource.manifestPath, 'utf8'));
+      if (info.hasServerCode && info.jsOrCsharp && !lock.exempt.includes(name)) candidates.push(name);
+    }
+    io.out(`Exempt now: ${lock.exempt.length > 0 ? lock.exempt.join(', ') : '(none)'}\n`);
+    if (candidates.length === 0) {
+      io.out('No JavaScript or C# resource left to decide about.\n');
+      return 0;
+    }
+    io.out('\nJavaScript/C# resources torii cannot inspect. In enforce mode they do not start unless exempt:\n');
+    for (const name of candidates.sort()) {
+      const known = catalog.unsupportedRuntime.find((entry) => entry.resources.includes(name));
+      io.out(`  ${name}${known ? `  (expected origin: ${known.origin.replace('https://', '')})` : ''}\n`);
+    }
+    io.out('\nExempt only scripts you trust, from their official source:\n');
+    io.out(`  torii exempt <resources-dir> ${candidates[0]} --write\n`);
+    return 0;
+  }
+
+  const remove = flags.remove === true;
+  const next = structuredClone(lock);
+  for (const name of names) {
+    if (!isSafeResourceName(name)) {
+      io.err(`Not a resource name: ${JSON.stringify(name.slice(0, 80))}\n`);
+      return 1;
+    }
+    if (remove) {
+      next.exempt = next.exempt.filter((item) => item !== name);
+      io.out(`- exempt  ${name}\n`);
+      continue;
+    }
+    if (next.exempt.includes(name)) {
+      io.out(`  exempt  ${name}  (already)\n`);
+      continue;
+    }
+    next.exempt.push(name);
+    io.out(`+ exempt  ${name}\n`);
+    const resource = resources.get(name);
+    if (!resource) {
+      io.out(`          not found in ${dir}: check the spelling\n`);
+      continue;
+    }
+    const info = inspectManifest(fs.readFileSync(resource.manifestPath, 'utf8'));
+    if (info.hasServerCode && !info.jsOrCsharp) {
+      io.out('          a Lua resource: exempt only lets it start without the torii line; if it has the line, its lockfile grants still apply\n');
+    } else {
+      io.out('          torii will not check this script at all: keep it only if it comes from its official source\n');
+    }
+    const known = catalog.unsupportedRuntime.find((entry) => entry.resources.includes(name));
+    if (known) io.out(`          expected origin: ${known.origin.replace('https://', '')}\n`);
+  }
+  if (flags.write) {
+    writeLock(lockPath, next);
+    io.out(`\nWritten to ${lockPath}. Restart torii for it to take effect.\n`);
+  } else {
+    io.out('\nNothing was written. Re-run with --write.\n');
   }
   return 0;
 }
@@ -364,13 +497,14 @@ export function main(argv, rawIo = { out: (s) => process.stdout.write(s), err: (
   // control characters (ANSI escapes, backspace, carriage return...) but keep newlines and tabs.
   const clean = (text) => String(text).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/g, '?');
   const io = { out: (text) => rawIo.out(clean(text)), err: (text) => rawIo.err(clean(text)) };
+  io.ask = rawIo.ask ? (question) => (io.out(question), rawIo.ask(question)) : (question) => promptLine(question, io.out);
   const { positional, flags } = parseArgs(argv);
   const command = positional[0];
   if (!command || command === 'help' || flags.help) {
     io.out(HELP);
     return command ? 0 : 1;
   }
-  if (!['install', 'uninstall', 'status', 'approve', 'simulate', 'explain'].includes(command)) {
+  if (!['install', 'uninstall', 'status', 'approve', 'simulate', 'explain', 'exempt'].includes(command)) {
     io.err(`Unknown command: ${command}\n\n${HELP}`);
     return 1;
   }
@@ -382,6 +516,7 @@ export function main(argv, rawIo = { out: (s) => process.stdout.write(s), err: (
     if (command === 'status') return status(dir, io);
     if (command === 'simulate') return simulateCommand(dir, flags, io);
     if (command === 'explain') return explainCommand(dir, flags, io);
+    if (command === 'exempt') return exempt(dir, positional.slice(2), flags, io);
     return approve(dir, flags, io);
   } catch (error) {
     io.err(`torii: ${error.message}\n`);

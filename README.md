@@ -101,7 +101,10 @@ set torii_mode "enforce"
 
 `approve` starts with a review: each item is marked 🟢 common, 🟠 check or 🔴 suspicious, with what to do about it.
 Suspicious items (raw IP addresses, look-alike names, paste sites, code run from memory) are left out of `--write`
-unless you add `--include-suspicious`. Common means usual, not guaranteed safe.
+unless you add `--include-suspicious`. Common means usual, not guaranteed safe. With `--ask`, approve asks about each
+item that is not common (a suspicious one needs `yes` typed in full) and confirms before writing, so you never edit the
+JSON by hand. `torii exempt <resources-dir>` lists the JavaScript/C# resources torii cannot inspect, and
+`torii exempt <resources-dir> oxmysql --write` exempts one on purpose.
 
 You can also follow it from the server console (the txAdmin live console works), without Node:
 
