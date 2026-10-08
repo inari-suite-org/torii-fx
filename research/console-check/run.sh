@@ -49,7 +49,8 @@ exp11_call_js'
 
 # the review state must survive a restart; English this time
 run restart 'set torii_mode "observe"' 'torii
-torii review'
+torii review
+torii explain 1'
 
 # with an ACL the Lua caller may run the restricted command; the handler must still see who invoked it
 run acl 'set torii_mode "observe"\nadd_ace resource.exp11_caller_lua command.exp11_secure allow' 'exp11_call'

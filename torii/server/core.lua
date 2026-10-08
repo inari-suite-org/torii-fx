@@ -18,6 +18,7 @@
 local LOG_FILE = '@torii/logs/torii.jsonl'
 local REVIEW_FILE = 'review-state.json' -- inside torii's own folder, which other resources cannot write
 local SAVE_EVERY_MS = 60 * 1000
+local SAVE_AFTER_CHANGE_MS = 5000 -- quit and crashes skip onResourceStop: save soon after a change
 local DIGEST_EVERY_MS = 60 * 60 * 1000
 local INIT_LINE = '@torii/init.lua'
 local GATE_DELAY_MS = 5000
@@ -108,6 +109,19 @@ local function save_review()
 	end
 end
 
+local save_scheduled = false
+
+local function schedule_save()
+	if save_scheduled then
+		return
+	end
+	save_scheduled = true
+	SetTimeout(SAVE_AFTER_CHANGE_MS, function()
+		save_scheduled = false
+		save_review()
+	end)
+end
+
 local function print_lines(lines)
 	for _, line in ipairs(lines) do
 		print(line)
@@ -175,7 +189,9 @@ local function record(resource, event)
 	local e = sanitize(event, resource)
 	write_log(e)
 	alert(e)
-	review:observe(e)
+	if review:observe(e) then
+		schedule_save()
+	end
 	return e
 end
 

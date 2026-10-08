@@ -191,12 +191,13 @@ function M:list()
 	return out
 end
 
---- Number of items, and how many of them belong to a suspicious resource.
+--- Number of items, and how many resources look suspicious (an item of theirs, or the loader shape).
 function M:counts()
-	local total, suspicious = 0, 0
+	local total, suspicious, seen = 0, 0, {}
 	for _, row in ipairs(self:list()) do
 		total = total + 1
-		if row.resource_level == 'suspicious' then
+		if row.resource_level == 'suspicious' and not seen[row.item.resource] then
+			seen[row.item.resource] = true
 			suspicious = suspicious + 1
 		end
 	end

@@ -114,7 +114,7 @@ describe('pending: the review', function()
 		}, summary)
 		local total, suspicious = p:counts()
 		assert.are.equal(4, total)
-		assert.are.equal(2, suspicious)
+		assert.are.equal(1, suspicious, 'one suspicious script, whatever the number of its requests')
 	end)
 
 	it('drops what the lockfile now allows', function()

@@ -47,7 +47,7 @@ M.en = {
 
 	-- summary and review
 	summary_none = 'No request waiting for a decision.',
-	summary_some = '{count} request(s) to review ({suspicious} suspicious). Type "torii review".',
+	summary_some = '{count} request(s) to review, {suspicious} script(s) look suspicious. Type "torii review".',
 	review_header = '{count} request(s) waiting for a decision (observing for {days} day(s)):',
 	review_empty = 'Nothing to review: every script stayed within what the lockfile allows.',
 	review_footer = 'To allow one, add it with `torii approve` on your computer (see docs/guide.md). "torii explain <number>" shows the details.',
@@ -107,7 +107,7 @@ M.fr = {
 	origin_memory = 'construit en mémoire ou reçu',
 
 	summary_none = 'Aucune demande en attente de décision.',
-	summary_some = '{count} demande(s) à examiner (dont {suspicious} suspecte(s)). Tapez "torii review".',
+	summary_some = '{count} demande(s) à examiner, {suspicious} script(s) suspect(s). Tapez "torii review".',
 	review_header = '{count} demande(s) en attente de décision (observation depuis {days} jour(s)) :',
 	review_empty = 'Rien à examiner : chaque script est resté dans ce que le lockfile autorise.',
 	review_footer = 'Pour en autoriser une, ajoutez-la avec `torii approve` sur votre ordinateur (voir docs/guide-fr.md). "torii explain <numéro>" affiche le détail.',

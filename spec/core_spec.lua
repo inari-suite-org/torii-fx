@@ -15,8 +15,16 @@ local CORE_SOURCE = read_file('torii/server/core.lua')
 local function start_core(opts)
 	opts = opts or {}
 	local files = opts.files or {}
-	local state =
-		{ printed = {}, commands = {}, events = {}, exports = {}, threads = {}, saved = files, invoking = nil }
+	local state = {
+		printed = {},
+		commands = {},
+		events = {},
+		exports = {},
+		threads = {},
+		timers = {},
+		saved = files,
+		invoking = nil,
+	}
 	local convars = opts.convars or {}
 	local env = setmetatable({
 		print = function(...)
@@ -63,7 +71,9 @@ local function start_core(opts)
 		CreateThread = function(fn)
 			state.threads[#state.threads + 1] = fn
 		end,
-		SetTimeout = function() end,
+		SetTimeout = function(_, fn)
+			state.timers[#state.timers + 1] = fn
+		end,
 		CancelEvent = function() end,
 		GetNumResourceMetadata = function()
 			return 0
@@ -116,7 +126,7 @@ describe('core: review list and console command', function()
 		assert.truthy(text:find('2 demande(s) en attente', 1, true))
 		assert.truthy(text:find('SUSPECT', 1, true))
 		assert.truthy(text:find('shop veut contacter https://45.133.1.20/payload', 1, true))
-		assert.truthy(core.run():find('2 demande(s) à examiner (dont 1 suspecte(s))', 1, true))
+		assert.truthy(core.run():find('2 demande(s) à examiner, 1 script(s) suspect(s)', 1, true))
 		assert.truthy(core.run('explain', '1'):find('shop/server.lua:3', 1, true))
 	end)
 
@@ -145,6 +155,15 @@ describe('core: review list and console command', function()
 end)
 
 describe('core: saved state', function()
+	it('saves soon after a change, without waiting for the resource to stop', function()
+		local core = start_core()
+		core.report('shop', blocked_http('https://45.133.1.20/payload'))
+		core.report('shop', blocked_http('https://45.133.1.21/payload'))
+		assert.are.equal(1, #core.timers, 'one save scheduled for a burst of changes')
+		core.timers[1]()
+		assert.truthy(core.saved['review-state.json']:find('45.133.1.21', 1, true))
+	end)
+
 	it('keeps the review across a restart', function()
 		local core = start_core()
 		core.report('shop', blocked_http('https://45.133.1.20/payload'))
