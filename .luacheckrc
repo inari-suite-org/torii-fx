@@ -23,3 +23,6 @@ files["spec/"] = {
 	globals = { "load", "debug", "_G" },
 	ignore = { "212", "213" },
 }
+
+-- one sentence per message: wrapping them would only make the translations harder to compare
+files["torii/src/messages.lua"] = { max_line_length = false }

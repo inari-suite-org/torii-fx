@@ -103,6 +103,17 @@ set torii_mode "enforce"
 Suspicious items (raw IP addresses, look-alike names, paste sites, code run from memory) are left out of `--write`
 unless you add `--include-suspicious`. Common means usual, not guaranteed safe.
 
+You can also follow it from the server console (the txAdmin live console works), without Node:
+
+```text
+torii                  what is waiting for a decision, and whether enforce mode looks safe yet
+torii review           numbered list of requests, worst first, with why and what to do
+torii explain <n>      how often, since when, from which file:line
+```
+
+These commands only read. Granting still goes through `torii approve` and the lockfile. Messages are in English or
+French: `set torii_lang "fr"`.
+
 For well-known libraries (ox_lib, es_extended, qb-core...), `--use-presets` adds what they legitimately need. It is
 opt-in and explained in [docs/presets.md](docs/presets.md).
 

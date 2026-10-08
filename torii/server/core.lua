@@ -9,10 +9,16 @@
 --   * checks that protected resources really ran init.lua (attestation);
 --   * prints a coverage summary at boot.
 --
+--   * keeps the list of requests waiting for the admin's decision, and answers the read-only "torii" command.
+--
 -- Convars:  set torii_mode "observe" | "enforce"      (default observe)
+--           set torii_lang "en" | "fr"                (language of the messages meant for the admin)
 --           set torii_allow_private 1                 (development only: allow localhost / private ranges)
 
 local LOG_FILE = '@torii/logs/torii.jsonl'
+local REVIEW_FILE = 'review-state.json' -- inside torii's own folder, which other resources cannot write
+local SAVE_EVERY_MS = 60 * 1000
+local DIGEST_EVERY_MS = 60 * 60 * 1000
 local INIT_LINE = '@torii/init.lua'
 local GATE_DELAY_MS = 5000
 local COVERAGE_DELAY_MS = 8000
@@ -68,6 +74,45 @@ local function load_policy()
 end
 
 local policy = load_policy()
+
+-- Requests waiting for a decision ----------------------------------------------------------------------
+
+local pending_module = req('pending')
+local console = req('console')
+local messages = req('messages')
+
+local function current_lang()
+	return messages.lang(GetConvar('torii_lang', 'en'))
+end
+
+local review = pending_module.new()
+do
+	local text = LoadResourceFile('torii', REVIEW_FILE)
+	if text then
+		local ok, saved = pcall(json.decode, text)
+		if ok then
+			review:import(saved)
+		end
+	end
+	review:refresh(policy) -- what the admin approved since the last run is no longer pending
+	review:tick(current_mode())
+end
+
+local function save_review()
+	if not review.dirty then
+		return
+	end
+	local ok, text = pcall(json.encode, review:export())
+	if ok and SaveResourceFile('torii', REVIEW_FILE, text, -1) then
+		review.dirty = false
+	end
+end
+
+local function print_lines(lines)
+	for _, line in ipairs(lines) do
+		print(line)
+	end
+end
 
 -- Logging ----------------------------------------------------------------------------------------------
 
@@ -130,6 +175,7 @@ local function record(resource, event)
 	local e = sanitize(event, resource)
 	write_log(e)
 	alert(e)
+	review:observe(e)
 	return e
 end
 
@@ -350,11 +396,47 @@ end
 CreateThread(function()
 	Wait(COVERAGE_DELAY_MS)
 	coverage()
+	print_lines(console.status(review, current_lang(), current_mode()))
 end)
 
 RegisterCommand('torii_status', coverage, true)
 
+-- Saving, and a reminder at most once an hour when the list changed ------------------------------------
+
+CreateThread(function()
+	local last_digest, last_total = GetGameTimer(), review:counts()
+	while true do
+		Wait(SAVE_EVERY_MS)
+		review:tick(current_mode())
+		save_review()
+		local total = review:counts()
+		if total > 0 and total ~= last_total and GetGameTimer() - last_digest >= DIGEST_EVERY_MS then
+			print_lines(console.status(review, current_lang(), current_mode()))
+			last_digest, last_total = GetGameTimer(), total
+		end
+	end
+end)
+
+-- "torii" console command. Read-only: it describes, it never changes a grant or the mode. Commands that change
+-- something wait for the security experiments in docs/roadmap.md (a script must not be able to type them itself).
+
+RegisterCommand('torii', function(_, args)
+	local lang, sub = current_lang(), type(args[1]) == 'string' and args[1]:lower() or 'status'
+	if sub == 'review' then
+		print_lines(console.review(review, lang))
+	elseif sub == 'explain' then
+		print_lines(console.explain(review, lang, args[2]))
+	elseif sub == 'status' then
+		print_lines(console.status(review, lang, current_mode()))
+	else
+		print_lines(console.help(lang))
+	end
+end, true)
+
 AddEventHandler('onResourceStop', function(resource)
+	if resource == 'torii' then
+		save_review()
+	end
 	if resource == 'torii' and log_handle then
 		pcall(function()
 			log_handle:close()

@@ -7,3 +7,6 @@ node_modules/
 .luarocks/
 .lua/
 lua_modules/
+
+# torii review state (written by the core at run time)
+torii/review-state.json
