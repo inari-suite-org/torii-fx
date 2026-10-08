@@ -245,9 +245,11 @@ its own events, which is why `approve` only proposes a diff and never writes wit
 - [x] Lua runtime: HTTP, dynamic code, `InvokeNative`, upvalue hardening, manifest gate
 - [x] Observe and enforce modes, lockfile with declaration hashes, JSON-lines log
 - [x] CLI: `install`, `uninstall`, `status`, `approve --from-logs`, presets for common libraries
-- [ ] Compatibility run with ox_lib, a framework and popular scripts on a development server
+- [x] Compatibility run with ox_lib, QBCore and popular scripts on a development server (5 hours, see STATUS.md)
+- [x] v0.2: verdicts in plain language, `torii_dynamic_code 'files'`, console review in English and French,
+  `approve --ask`, `torii exempt`, `torii simulate`, `torii explain`
 - [ ] A server with real players in observe mode (until then, torii stays experimental)
-- [ ] v0.2: `torii simulate`, `torii explain`, signals about suspicious hosts, `torii doctor`
+- [ ] Console commands that change grants (`torii allow`, `torii mode`), `torii doctor`
 
 Details and order: [docs/roadmap.md](docs/roadmap.md). Current state: [STATUS.md](STATUS.md).
 
